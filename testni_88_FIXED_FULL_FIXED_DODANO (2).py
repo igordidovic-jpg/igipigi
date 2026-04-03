@@ -4421,42 +4421,45 @@ if __name__ == "__main__":
 # ============================================================
 
 try:
-    lam_total = lam_h + lam_a + lam_c
+    if 'lam_h' in locals() and 'lam_a' in locals() and 'lam_c' in locals():
+        lam_total = lam_h + lam_a + lam_c
 
-    if lam_total > 0:
-        p_goal = 1 - math.exp(-lam_total)
-        p_no_goal = math.exp(-lam_total)
-    else:
-        p_goal = 0.0
-        p_no_goal = 1.0
+        if lam_total > 0:
+            p_goal = 1 - math.exp(-lam_total)
+            p_no_goal = math.exp(-lam_total)
+        else:
+            p_goal = 0.0
+            p_no_goal = 1.0
 
-    lam_attack = lam_h + lam_a
+        lam_attack = lam_h + lam_a
 
-    if lam_attack > 0:
-        p_home_next = (lam_h / lam_attack) * p_goal
-        p_away_next = (lam_a / lam_attack) * p_goal
-    else:
-        p_home_next = 0.0
-        p_away_next = 0.0
+        if lam_attack > 0:
+            p_home_next = (lam_h / lam_attack) * p_goal
+            p_away_next = (lam_a / lam_attack) * p_goal
+        else:
+            p_home_next = 0.0
+            p_away_next = 0.0
 
-    # ============================================================
-    # NEXT GOAL CONSISTENCY FIX
-    # ============================================================
+        # ============================================================
+        # NEXT GOAL CONSISTENCY FIX
+        # ============================================================
 
-    if 'danger_h' in locals() and 'danger_a' in locals():
-        if danger_h > danger_a and p_away_next > p_home_next:
-            p_home_next *= 1.15
+        if 'danger_h' in locals() and 'danger_a' in locals():
+            if danger_h > danger_a and p_away_next > p_home_next:
+                p_home_next *= 1.15
 
-        if danger_a > danger_h and p_home_next > p_away_next:
-            p_away_next *= 1.15
+            if danger_a > danger_h and p_home_next > p_away_next:
+                p_away_next *= 1.15
 
-    # normalize
-    s = p_home_next + p_away_next
-    if s > 0:
-        p_home_next /= s
-        p_away_next /= s
+        # normalize
+        s = p_home_next + p_away_next
+        if s > 0:
+            p_home_next /= s
+            p_away_next /= s
 
-except:
+except Exception:
+    pass
+finally:
     pass
 
 
