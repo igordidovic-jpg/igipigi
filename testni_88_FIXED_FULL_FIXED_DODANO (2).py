@@ -1411,24 +1411,6 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     danger_h = get_num(data, 16)
     danger_a = get_num(data, 17)
 
-    pos_h = get_safe(18)
-    pos_a = get_safe(19)
-
-    passes_h = get_safe(20)
-    passes_a = get_safe(21)
-
-    duels_h = get_safe(22)
-    duels_a = get_safe(23)
-
-    corners_h = get_safe(24)
-    corners_a = get_safe(25)
-
-    yellow_h = get_safe(26)
-    yellow_a = get_safe(27)
-
-    red_h = get_safe(28)
-    red_a = get_safe(29)
-
     # ============================================================
     # AUTO SWAP DISABLED (BUG FIX)
     # ============================================================
@@ -1663,11 +1645,6 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     if final_third_h == 0 and final_third_fm_h > 0:
         final_third_h = final_third_fm_h
 
-    if final_third_a == 0 and final_third_fm_a > 0:
-        final_third_a = final_third_fm_a
-
-    if final_third_h == 0 and final_third_fm_h > 0:
-        final_third_h = final_third_fm_h
     if final_third_a == 0 and final_third_fm_a > 0:
         final_third_a = final_third_fm_a
 
