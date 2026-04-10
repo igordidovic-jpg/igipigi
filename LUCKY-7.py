@@ -655,7 +655,7 @@ def print_interpretacija(r):
     top2 = top_scores[1] if len(top_scores) >= 2 else None
     top3 = top_scores[2] if len(top_scores) >= 3 else None
 
-    print("Top:" )
+    print("Top:")
     print(f"{top1[0]} → {pct(top1[1])} %")
     if top2:
         print(f"{top2[0]} → {pct(top2[1])} %")
@@ -1326,7 +1326,7 @@ def print_learn_ratios(rh, rx, ra, n_1x2):
     pd = (rx - 1.0) * 100.0
     pa = (ra - 1.0) * 100.0
 
-    base = 1/3
+    base = 1 / 3
 
     h_est = int(n_1x2 * base * rh)
     d_est = int(n_1x2 * base * rx)
@@ -1762,18 +1762,18 @@ def compute_timeline_factors(rows):
     trend_goal = clamp(trend_goal, 0.88, 1.18)
 
     home_push = (
-            shots_h_pm * 0.10 +
-            sot_h_pm * 0.34 +
-            danger_h_pm * 0.012 +
-            att_h_pm * 0.005 +
-            xg_h_pm * 0.40
+        shots_h_pm * 0.10 +
+        sot_h_pm * 0.34 +
+        danger_h_pm * 0.012 +
+        att_h_pm * 0.005 +
+        xg_h_pm * 0.40
     )
     away_push = (
-            shots_a_pm * 0.10 +
-            sot_a_pm * 0.34 +
-            danger_a_pm * 0.012 +
-            att_a_pm * 0.005 +
-            xg_a_pm * 0.40
+        shots_a_pm * 0.10 +
+        sot_a_pm * 0.34 +
+        danger_a_pm * 0.012 +
+        att_a_pm * 0.005 +
+        xg_a_pm * 0.40
     )
 
     home_factor = clamp(1.0 + clamp(home_push, -0.10, 0.15), 0.86, 1.18)
@@ -2199,9 +2199,9 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
     # kombinirana moč
     team_power = (
-            pm_diff * 0.50 +
-            elo_diff * 0.30 +
-            odds_bias * 0.20
+        pm_diff * 0.50 +
+        elo_diff * 0.30 +
+        odds_bias * 0.20
     )
 
     team_power = clamp(team_power, -0.35, 0.35)
@@ -2490,38 +2490,38 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     attack_a = xg_a * 3.0 + shots_a * 0.25 + sot_a * 0.85 + bc_a * 1.7 + keypasses_a * 0.16 + crosses_a * 0.05 + dribbles_a * 0.07
 
     danger_idx_h = (
-            sot_h * 1.0 +
-            bc_h * 1.4 +
-            xg_h * 3.8 +
-            keypasses_h * 0.12 +
-            bc_created_h * 0.15
+        sot_h * 1.0 +
+        bc_h * 1.4 +
+        xg_h * 3.8 +
+        keypasses_h * 0.12 +
+        bc_created_h * 0.15
     )
 
     danger_idx_a = (
-            sot_a * 1.0 +
-            bc_a * 1.4 +
-            xg_a * 3.8 +
-            keypasses_a * 0.12 +
-            bc_created_a * 0.15
+        sot_a * 1.0 +
+        bc_a * 1.4 +
+        xg_a * 3.8 +
+        keypasses_a * 0.12 +
+        bc_created_a * 0.15
     )
 
     danger_idx_h = clamp(danger_idx_h, 0.0, 6.5)
     danger_idx_a = clamp(danger_idx_a, 0.0, 6.5)
 
     pressure_h = (
-            sot_h * 1.20 +
-            bc_h * 1.50 +
-            danger_idx_h * 0.55 +
-            tempo_shots_h * 6.5 +
-            corners_h * 0.08
+        sot_h * 1.20 +
+        bc_h * 1.50 +
+        danger_idx_h * 0.55 +
+        tempo_shots_h * 6.5 +
+        corners_h * 0.08
     )
 
     pressure_a = (
-            sot_a * 1.20 +
-            bc_a * 1.50 +
-            danger_idx_a * 0.55 +
-            tempo_shots_a * 6.5 +
-            corners_a * 0.08
+        sot_a * 1.20 +
+        bc_a * 1.50 +
+        danger_idx_a * 0.55 +
+        tempo_shots_a * 6.5 +
+        corners_a * 0.08
     )
 
     pressure_h = clamp(pressure_h, 0.0, 12.0)
@@ -2571,20 +2571,20 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     # DEBUG (lahko kasneje izbrišeš)
 
     lambda_core_h = (
-            xg_h * 0.58 +
-            danger_h * 0.0038 +
-            sot_h * 0.085 +
-            shots_h * 0.020 +
-            bc_h * 0.070 +
-            corners_h * 0.010
+        xg_h * 0.58 +
+        danger_h * 0.0038 +
+        sot_h * 0.085 +
+        shots_h * 0.020 +
+        bc_h * 0.070 +
+        corners_h * 0.010
     )
     lambda_core_a = (
-            xg_a * 0.58 +
-            danger_a * 0.0038 +
-            sot_a * 0.085 +
-            shots_a * 0.020 +
-            bc_a * 0.070 +
-            corners_a * 0.010
+        xg_a * 0.58 +
+        danger_a * 0.0038 +
+        sot_a * 0.085 +
+        shots_a * 0.020 +
+        bc_a * 0.070 +
+        corners_a * 0.010
     )
 
     # PRO 75 - dodaten vpliv, samo če podatki obstajajo
@@ -2676,9 +2676,9 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     if abs(momentum) < 0.05 and timeline["n"] < 2 and minute < 55:
 
         fallback_raw = (
-                (sot_h - sot_a) * 0.06 +
-                (shots_h - shots_a) * 0.02 +
-                (keypasses_h - keypasses_a) * 0.04
+            (sot_h - sot_a) * 0.06 +
+            (shots_h - shots_a) * 0.02 +
+            (keypasses_h - keypasses_a) * 0.04
         )
 
         norm = abs(sot_h) + abs(sot_a) + abs(shots_h) + abs(shots_a) + abs(keypasses_h) + abs(keypasses_a)
@@ -3578,22 +3578,22 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
     if total_n > 0:
         hist_home = (
-                            hist_home_bucket * hist_n +
-                            mem_home * mem_n +
-                            mc_home_hist * mc_n
-                    ) / total_n
+            hist_home_bucket * hist_n +
+            mem_home * mem_n +
+            mc_home_hist * mc_n
+        ) / total_n
 
         hist_draw = (
-                            hist_draw_bucket * hist_n +
-                            mem_draw * mem_n +
-                            mc_draw_hist * mc_n
-                    ) / total_n
+            hist_draw_bucket * hist_n +
+            mem_draw * mem_n +
+            mc_draw_hist * mc_n
+        ) / total_n
 
         hist_away = (
-                            hist_away_bucket * hist_n +
-                            mem_away * mem_n +
-                            mc_away_hist * mc_n
-                    ) / total_n
+            hist_away_bucket * hist_n +
+            mem_away * mem_n +
+            mc_away_hist * mc_n
+        ) / total_n
 
     # ============================================================
     # HISTORY BIAS PRINT
@@ -3712,9 +3712,9 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     # ============================================================
 
     rt_strength = (
-            abs(lam_h - lam_a) * 2 +
-            abs(p_home_next - p_away_next) +
-            abs(mc_h_adj - mc_a_adj)
+        abs(lam_h - lam_a) * 2 +
+        abs(p_home_next - p_away_next) +
+        abs(mc_h_adj - mc_a_adj)
     )
 
     if rt_strength > 1:
@@ -5242,8 +5242,6 @@ def izpis_rezultata(r):
 # CFOS ACCURACY COUNTER
 # ============================================================
 
-import csv
-import os
 
 def cfos_accuracy():
 
@@ -5315,24 +5313,24 @@ def cfos_accuracy():
     print()
     print("============= CFOS PRO ACCURACY =============")
 
-    print("TOTAL".ljust(18), f"{correct_total}/{total} ({round(correct_total/total*100,1)}%)")
+    print("TOTAL".ljust(18), f"{correct_total}/{total} ({round(correct_total / total * 100, 1)}%)")
 
     if draw_total > 0:
-        print("DRAW".ljust(18), f"{draw_correct}/{draw_total} ({round(draw_correct/draw_total*100,1)}%)")
+        print("DRAW".ljust(18), f"{draw_correct}/{draw_total} ({round(draw_correct / draw_total * 100, 1)}%)")
 
     if late_total > 0:
-        print("LATE 70+".ljust(18), f"{late_correct}/{late_total} ({round(late_correct/late_total*100,1)}%)")
+        print("LATE 70+".ljust(18), f"{late_correct}/{late_total} ({round(late_correct / late_total * 100, 1)}%)")
 
     if home_total > 0:
-        print("HOME".ljust(18), f"{home_correct}/{home_total} ({round(home_correct/home_total*100,1)}%)")
+        print("HOME".ljust(18), f"{home_correct}/{home_total} ({round(home_correct / home_total * 100, 1)}%)")
 
     if away_total > 0:
-        print("AWAY".ljust(18), f"{away_correct}/{away_total} ({round(away_correct/away_total*100,1)}%)")
+        print("AWAY".ljust(18), f"{away_correct}/{away_total} ({round(away_correct / away_total * 100, 1)}%)")
 
     print("=============================================")
     print("============= CFOS ACCURACY =============")
     print("Matches         ", total)
-    print("1X2 correct     ", hit_1x2, f"({round(hit_1x2/total*100,1)}%)")
+    print("1X2 correct     ", hit_1x2, f"({round(hit_1x2 / total * 100, 1)}%)")
     print("========================================")
     print()
 
