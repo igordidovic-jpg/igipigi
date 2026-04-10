@@ -3183,6 +3183,43 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
         if sot_h > sot_a and danger_h >= danger_a * 0.90 and attacks_h < attacks_a:
             lam_a_raw *= 1.10
+
+    # ============================================================
+    # GLOBAL FAKE CONTROL DETECTOR
+    # ============================================================
+
+    fake_control = False
+
+    losing_side = "HOME" if score_diff < 0 else "AWAY"
+    leading_side = "AWAY" if score_diff < 0 else "HOME"
+
+    shots_losing = shots_h if losing_side == "HOME" else shots_a
+    shots_leading = shots_a if losing_side == "HOME" else shots_h
+
+    sot_losing = sot_h if losing_side == "HOME" else sot_a
+    sot_leading = sot_a if losing_side == "HOME" else sot_h
+
+    danger_losing = danger_h if losing_side == "HOME" else danger_a
+    danger_leading = danger_a if losing_side == "HOME" else danger_h
+
+    if (
+        minute >= 65
+        and abs(score_diff) == 1
+        and shots_losing >= shots_leading * 0.70
+        and sot_losing >= sot_leading * 0.60
+        and tempo_danger < 1.08
+        and game_type in ("BALANCED", "PRESSURE")
+    ):
+        fake_control = True
+
+    if fake_control:
+        if losing_side == "HOME":
+            lam_h_raw *= 1.28
+            lam_a_raw *= 0.88
+        else:
+            lam_a_raw *= 1.28
+            lam_h_raw *= 0.88
+
     # ============================================================
     # GLOBAL LATE BOOST LIMITER (CRITICAL FIX)
     # ============================================================
@@ -4043,6 +4080,14 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         scale = p_goal / s_next
         p_home_next *= scale
         p_away_next *= scale
+
+    if fake_control:
+        if losing_side == "HOME":
+            p_home_next *= 1.22
+            p_away_next *= 0.85
+        else:
+            p_away_next *= 1.22
+            p_home_next *= 0.85
 
     next_goal_prediction, next_goal_bet, next_goal_reason = next_goal_bet_engine(
         p_home_next=p_home_next,
