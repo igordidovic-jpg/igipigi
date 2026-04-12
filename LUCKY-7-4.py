@@ -738,7 +738,7 @@ def predict_next_goal_smart(
         score_h *= 1.15
         score_a *= 0.85
 
-    no_real_dominance = signals <= 2
+    no_real_dominance = no_real_dominance or (signals <= 2)
 
     # ============================================================
     # NO REAL DOMINANCE APPLY (EXACT FIX)
