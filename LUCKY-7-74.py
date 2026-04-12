@@ -519,6 +519,197 @@ def next_goal_bet_engine(p_home_next, p_away_next, lam_h, lam_a, momentum, tempo
 
 
 # ============================================================
+# NEXT GOAL SMART ENGINE (PREDICT_NEXT_GOAL_SMART)
+# ============================================================
+def predict_next_goal_smart(
+    p_home_next, p_away_next,
+    lam_h, lam_a,
+    danger_h, danger_a,
+    xg_h, xg_a,
+    momentum,
+    pressure_h, pressure_a,
+    tempo_danger,
+    sot_h, sot_a,
+    game_type,
+    minute
+):
+    """
+    Smart next goal prediction with 8+ weighted signals and confidence score.
+    WEIGHTING: P(next)=25%, Lambda=20%, Danger=15%, Momentum=15%,
+               Pressure=10%, xG=10%, GameType+SOT=5%
+    Returns dict with prediction, confidence (0.0-1.0), scores and details.
+    """
+    p_home_next = float(p_home_next or 0.0)
+    p_away_next = float(p_away_next or 0.0)
+    lam_h = float(lam_h or 0.0)
+    lam_a = float(lam_a or 0.0)
+    danger_h = float(danger_h or 0.0)
+    danger_a = float(danger_a or 0.0)
+    xg_h = float(xg_h or 0.0)
+    xg_a = float(xg_a or 0.0)
+    momentum = float(momentum or 0.0)
+    pressure_h = float(pressure_h or 0.0)
+    pressure_a = float(pressure_a or 0.0)
+    tempo_danger = float(tempo_danger or 0.0)
+    sot_h = float(sot_h or 0.0)
+    sot_a = float(sot_a or 0.0)
+    minute = int(float(minute or 0))
+    game_type = str(game_type or "BALANCED")
+
+    # SIGNAL WEIGHTS
+    W_PNEXT = 0.25
+    W_LAMBDA = 0.20
+    W_DANGER = 0.15
+    W_MOMENTUM = 0.15
+    W_PRESSURE = 0.10
+    W_XG = 0.10
+    W_GAMETYPE = 0.05
+    TOTAL_SIGNALS = 7  # number of directional signals used for confidence
+
+    # SIGNAL 1: P(next) probability (25%)
+    p_total = p_home_next + p_away_next
+    if p_total > 1e-9:
+        p_home_norm = p_home_next / p_total
+        p_away_norm = p_away_next / p_total
+    else:
+        p_home_norm = 0.5
+        p_away_norm = 0.5
+    sig1_h = (p_home_norm - 0.5) * 2.0
+    sig1_a = (p_away_norm - 0.5) * 2.0
+
+    # SIGNAL 2: Lambda difference (20%)
+    lam_total_s = lam_h + lam_a
+    if lam_total_s > 1e-9:
+        lam_diff_s = (lam_h - lam_a) / lam_total_s
+    else:
+        lam_diff_s = 0.0
+    sig2_h = lam_diff_s
+    sig2_a = -lam_diff_s
+
+    # SIGNAL 3: Danger difference (15%)
+    danger_total_s = danger_h + danger_a
+    if danger_total_s > 1e-9:
+        danger_diff_s = (danger_h - danger_a) / danger_total_s
+    else:
+        danger_diff_s = 0.0
+    sig3_h = danger_diff_s
+    sig3_a = -danger_diff_s
+
+    # SIGNAL 4: Momentum (15%)
+    sig4_h = clamp(momentum, -1.0, 1.0)
+    sig4_a = -sig4_h
+
+    # SIGNAL 5: Pressure difference (10%)
+    pressure_total_s = pressure_h + pressure_a
+    if pressure_total_s > 1e-9:
+        press_diff_s = (pressure_h - pressure_a) / pressure_total_s
+    else:
+        press_diff_s = 0.0
+    sig5_h = press_diff_s
+    sig5_a = -press_diff_s
+
+    # SIGNAL 6: xG difference (10%)
+    xg_total_s = xg_h + xg_a
+    if xg_total_s > 1e-9:
+        xg_diff_s = (xg_h - xg_a) / xg_total_s
+    else:
+        xg_diff_s = 0.0
+    sig6_h = xg_diff_s
+    sig6_a = -xg_diff_s
+
+    # SIGNAL 7: SOT ratio (part of game type weight)
+    sot_total_s = sot_h + sot_a
+    if sot_total_s > 1e-9:
+        sot_diff_s = (sot_h - sot_a) / sot_total_s
+    else:
+        sot_diff_s = 0.0
+
+    # SIGNAL 8: Tempo danger multiplier
+    if tempo_danger > 1.20:
+        tempo_mult = 1.10
+    elif tempo_danger < 0.80:
+        tempo_mult = 0.92
+    else:
+        tempo_mult = 1.0
+
+    # GAME TYPE MODIFIER (boosts dominant side in aggressive game types)
+    gt_boost_h = 0.0
+    gt_boost_a = 0.0
+    if game_type in ("PRESSURE", "ATTACK_WAVE", "CHAOS"):
+        if danger_diff_s > 0:
+            gt_boost_h = 0.15
+        else:
+            gt_boost_a = 0.15
+
+    # MINUTE PENALTY (84+ = smaller attack multiplier)
+    if minute >= 84:
+        minute_mult = 0.85
+    elif minute >= 80:
+        minute_mult = 0.92
+    else:
+        minute_mult = 1.0
+
+    # WEIGHTED COMPOSITE SCORES
+    score_h = (
+        W_PNEXT * sig1_h +
+        W_LAMBDA * sig2_h +
+        W_DANGER * sig3_h +
+        W_MOMENTUM * sig4_h +
+        W_PRESSURE * sig5_h +
+        W_XG * sig6_h +
+        W_GAMETYPE * (sot_diff_s + gt_boost_h)
+    ) * tempo_mult * minute_mult
+
+    score_a = (
+        W_PNEXT * sig1_a +
+        W_LAMBDA * sig2_a +
+        W_DANGER * sig3_a +
+        W_MOMENTUM * sig4_a +
+        W_PRESSURE * sig5_a +
+        W_XG * sig6_a +
+        W_GAMETYPE * (-sot_diff_s + gt_boost_a)
+    ) * tempo_mult * minute_mult
+
+    # PREDICTION
+    prediction = "HOME" if score_h >= score_a else "AWAY"
+
+    # CONFIDENCE SCORE (agreement % across 7 directional signals)
+    if prediction == "HOME":
+        agree = [
+            sig1_h > 0,
+            sig2_h > 0,
+            sig3_h > 0,
+            sig4_h > 0,
+            sig5_h > 0,
+            sig6_h > 0,
+            sot_diff_s > 0,
+        ]
+    else:
+        agree = [
+            sig1_a > 0,
+            sig2_a > 0,
+            sig3_a > 0,
+            sig4_a > 0,
+            sig5_a > 0,
+            sig6_a > 0,
+            sot_diff_s < 0,
+        ]
+
+    agreement_count = sum(agree)
+    confidence = round(agreement_count / TOTAL_SIGNALS, 3)
+
+    return {
+        "prediction": prediction,
+        "confidence": confidence,
+        "score_h": round(score_h, 4),
+        "score_a": round(score_a, 4),
+        "signals_agreement": agreement_count,
+        "tempo_mult": round(tempo_mult, 3),
+        "minute_mult": round(minute_mult, 3),
+    }
+
+
+# ============================================================
 # BALANCE COUNTER FILTER
 # ============================================================
 def cfos_balance_counter(danger_h, danger_a, shots_h, shots_a, counter_goal):
@@ -2862,6 +3053,7 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     # ============================================================
 
     dominance = (danger_h - danger_a) / max(1, danger_total)
+    danger_dominance = dominance  # save danger-based dominance for return dict
 
     # ============================================================
     # BASE DOMINANCE
@@ -3122,9 +3314,12 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
     # FIX 5: LAMBDA RATIO LIMIT
     if minute >= 60:
-        ratio = safe_div(lam_a_raw, lam_h_raw, 1.0)
-        if ratio > 4.0:
+        lam_a_to_h_ratio = safe_div(lam_a_raw, lam_h_raw, 1.0)
+        if lam_a_to_h_ratio > 4.0:
             lam_a_raw *= 0.75
+        lam_h_to_a_ratio = safe_div(lam_h_raw, lam_a_raw, 1.0)
+        if lam_h_to_a_ratio > 4.0:
+            lam_h_raw *= 0.75
 
     # NORMALIZACIJA
     lam_total_after = lam_h_raw + lam_a_raw
@@ -4158,6 +4353,25 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         game_type=game_type,
     )
 
+    next_goal_prediction_smart = predict_next_goal_smart(
+        p_home_next=p_home_next,
+        p_away_next=p_away_next,
+        lam_h=lam_h,
+        lam_a=lam_a,
+        danger_h=danger_h,
+        danger_a=danger_a,
+        xg_h=xg_h,
+        xg_a=xg_a,
+        momentum=momentum,
+        pressure_h=pressure_h,
+        pressure_a=pressure_a,
+        tempo_danger=tempo_danger,
+        sot_h=sot_h,
+        sot_a=sot_a,
+        game_type=game_type,
+        minute=minute,
+    )
+
     counter_goal_raw = next_goal_bet if normalize_outcome_label(next_goal_bet) in ("HOME", "AWAY") else next_goal_prediction
     dominant_side, counter_goal = cfos_balance_counter(
         danger_h,
@@ -4259,7 +4473,9 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         "no_wave": no_wave,
         "overpressure_home": overpressure_home,
         "overpressure_away": overpressure_away,
-        "leading_side": leading_side
+        "leading_side": leading_side,
+        "dominance": danger_dominance,
+        "next_goal_prediction_smart": next_goal_prediction_smart,
     }
 
 
@@ -5176,7 +5392,26 @@ def izpis_rezultata(r):
     print_next_goal_bet(r)
     print_counter_control(r)
 
-    print(f"\n{MAGENTA}--------------- META CALIBRATION ----------------{RESET}\n")
+    # ============================================================
+    # NEXT GOAL SMART PREDICTION
+    # ============================================================
+    ng_smart = r.get("next_goal_prediction_smart") or {}
+    if ng_smart:
+        print()
+        print(f"{COL_NEXT}--------------- NEXT GOAL SMART ----------------{RESET}")
+        print(f"Prediction".ljust(28), btxt(str(ng_smart.get("prediction", "N/A")), COL_NEXT, True))
+        conf_val = float(ng_smart.get("confidence", 0) or 0)
+        conf_pct = round(conf_val * 100, 1)
+        conf_col = GREEN if conf_val >= 0.57 else YELLOW if conf_val >= 0.43 else RED
+        print(f"Confidence".ljust(28), btxt(f"{conf_pct} %", conf_col, True))
+        print(f"Score HOME".ljust(28), round(ng_smart.get("score_h", 0), 4))
+        print(f"Score AWAY".ljust(28), round(ng_smart.get("score_a", 0), 4))
+        print(f"Signals agreement".ljust(28), f"{ng_smart.get('signals_agreement', 0)}/7")
+        print(f"Tempo mult".ljust(28), ng_smart.get("tempo_mult", 1.0))
+        print(f"Minute mult".ljust(28), ng_smart.get("minute_mult", 1.0))
+        print("------------------------------------------------")
+
+
 
     print("META HOME".ljust(28), round(r["mc_h_adj"], 4))
     print("META DRAW".ljust(28), round(r["mc_x_adj"], 4))
@@ -5598,6 +5833,11 @@ def bet_decision(r):
 
     dominance = float(r.get("dominance", 0) or 0)
 
+    # next goal smart prediction
+    ng_smart = r.get("next_goal_prediction_smart") or {}
+    ng_smart_pred = str(ng_smart.get("prediction", "") or "")
+    ng_smart_conf = float(ng_smart.get("confidence", 0) or 0)
+
     # optional high-IQ extras
     red_h = float(r.get("red_h", 0) or 0)
     red_a = float(r.get("red_a", 0) or 0)
@@ -5840,6 +6080,12 @@ def bet_decision(r):
     if fake_pressure or chaos:
         scores["NEXT GOAL HOME"] -= 2.0
 
+    # smart next goal signal boost (HOME)
+    if ng_smart_pred == "HOME" and ng_smart_conf >= 0.57:
+        scores["NEXT GOAL HOME"] += 1.0 + ng_smart_conf
+    elif ng_smart_pred == "HOME" and ng_smart_conf >= 0.43:
+        scores["NEXT GOAL HOME"] += 0.6
+
     # -----------------------------------------------------
     # NEXT GOAL AWAY
     # -----------------------------------------------------
@@ -5885,6 +6131,12 @@ def bet_decision(r):
 
     if fake_pressure or chaos:
         scores["NEXT GOAL AWAY"] -= 2.0
+
+    # smart next goal signal boost (AWAY)
+    if ng_smart_pred == "AWAY" and ng_smart_conf >= 0.57:
+        scores["NEXT GOAL AWAY"] += 1.0 + ng_smart_conf
+    elif ng_smart_pred == "AWAY" and ng_smart_conf >= 0.43:
+        scores["NEXT GOAL AWAY"] += 0.6
 
     # -----------------------------------------------------
     # COMEBACK HOME
@@ -6339,6 +6591,8 @@ def bet_decision(r):
     print("STRONGER SIDE:", stronger_side)
     print("MC:", round(mc_h, 2), "/", round(mc_x, 2), "/", round(mc_a, 2))
     print("HISTORY:", round(hist_home, 2), "/", round(hist_draw, 2), "/", round(hist_away, 2))
+    if ng_smart_pred:
+        print(f"NEXT GOAL SMART: {ng_smart_pred} (conf: {round(ng_smart_conf * 100, 1)} %)")
 
     if fake_pressure:
         print("FILTER:", fake_reason)
