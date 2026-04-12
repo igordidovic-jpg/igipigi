@@ -2913,6 +2913,26 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
     momentum = clamp(momentum, -0.70, 0.70)
 
+    # ============================================================
+    # SPLIT CONTROL DETECTOR (CRITICAL)
+    # ============================================================
+
+    split_control = False
+
+    if (
+        attacks_h > attacks_a * 1.4
+        and danger_h > danger_a * 1.5
+        and xg_a > xg_h * 3
+    ):
+        split_control = True
+
+    # ============================================================
+    # MOMENTUM LIMITER
+    # ============================================================
+
+    if split_control:
+        momentum *= 0.7
+
     # DEBUG (lahko kasneje izbrišeš)
 
     lambda_core_h = (
@@ -3825,6 +3845,17 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     lam_a *= counter_boost_away
 
     # ============================================================
+    # LAMBDA ROTATION (CRITICAL FIX)
+    # ============================================================
+
+    if lam_h > 0:
+        lam_ratio_sc = lam_a / lam_h
+        if lam_ratio_sc > 3.0:
+            scale = 3.0 / lam_ratio_sc
+            lam_a *= scale
+    lam_total = lam_h + lam_a + lam_c
+
+    # ============================================================
     # MIN FLOW
     # ============================================================
 
@@ -4151,6 +4182,15 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     print("AWAY".ljust(8), f"{mc_a_adj:.4f}")
 
     print("=================================================\n")
+
+    # ============================================================
+    # SPLIT CONTROL META CORRECTION
+    # ============================================================
+
+    if split_control:
+        mc_x_adj *= 1.35  # draw boost +35%
+        mc_a_adj *= 0.80  # away reduce -20%
+        mc_h_adj *= 1.10  # home slight boost +10%
 
     s = mc_h_adj + mc_x_adj + mc_a_adj
     if s > 1e-9:
