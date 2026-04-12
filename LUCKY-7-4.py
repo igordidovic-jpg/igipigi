@@ -516,6 +516,318 @@ def next_goal_bet_engine(p_home_next, p_away_next, lam_h, lam_a, momentum, tempo
 
 
 # ============================================================
+# SMART NEXT GOAL PREDICTION (CFOS-XG PRO 75 TITAN)
+# Integrates fix-6, fix-7, fix-8, fix-9
+# ============================================================
+
+def predict_next_goal_smart(
+    p_home_next, p_away_next,
+    lam_h, lam_a,
+    danger_h, danger_a,
+    xg_h, xg_a,
+    momentum,
+    pressure_h, pressure_a,
+    tempo_danger,
+    sot_h, sot_a,
+    game_type,
+    minute
+):
+    """
+    Smart next goal prediction with 8+ weighted signals and confidence score.
+    WEIGHTING: P(next)=25%, Lambda=20%, Danger=15%, Momentum=15%,
+               Pressure=10%, xG=10%, GameType+SOT=5%
+    Returns dict with prediction, confidence (0.0-1.0), scores and details.
+    """
+    p_home_next = float(p_home_next or 0.0)
+    p_away_next = float(p_away_next or 0.0)
+    lam_h = float(lam_h or 0.0)
+    lam_a = float(lam_a or 0.0)
+    danger_h = float(danger_h or 0.0)
+    danger_a = float(danger_a or 0.0)
+    xg_h = float(xg_h or 0.0)
+    xg_a = float(xg_a or 0.0)
+    momentum = float(momentum or 0.0)
+    pressure_h = float(pressure_h or 0.0)
+    pressure_a = float(pressure_a or 0.0)
+    tempo_danger = float(tempo_danger or 0.0)
+    sot_h = float(sot_h or 0.0)
+    sot_a = float(sot_a or 0.0)
+    minute = int(float(minute or 0))
+    game_type = str(game_type or "BALANCED")
+
+    # ============================================================
+    # NO REAL DOMINANCE FILTER (SAFE - CFOS COMPATIBLE)
+    # ============================================================
+    no_real_dominance = False
+
+    if abs(momentum) < 0.05:
+        if danger_h > 0 and danger_a > 0 and pressure_h > 0 and pressure_a > 0:
+
+            dr = danger_h / danger_a
+            pr = pressure_h / pressure_a
+
+            if dr < 1:
+                dr = 1 / dr
+            if pr < 1:
+                pr = 1 / pr
+
+            if dr < 1.15 and pr < 1.15:
+                no_real_dominance = True
+
+    if tempo_danger > 2.0 and abs(momentum) < 0.08:
+        no_real_dominance = True
+
+    # SIGNAL WEIGHTS
+    W_PNEXT = 0.25
+    W_LAMBDA = 0.20
+    W_DANGER = 0.15
+    W_MOMENTUM = 0.15
+    W_PRESSURE = 0.10
+    W_XG = 0.10
+    W_GAMETYPE = 0.05
+    TOTAL_SIGNALS = 7  # number of directional signals used for confidence
+
+    # SIGNAL 1: P(next) probability (25%)
+    p_total = p_home_next + p_away_next
+    if p_total > 1e-9:
+        p_home_norm = p_home_next / p_total
+        p_away_norm = p_away_next / p_total
+    else:
+        p_home_norm = 0.5
+        p_away_norm = 0.5
+    sig1_h = (p_home_norm - 0.5) * 2.0
+    sig1_a = (p_away_norm - 0.5) * 2.0
+
+    # SIGNAL 2: Lambda difference (20%)
+    lam_total_s = lam_h + lam_a
+    if lam_total_s > 1e-9:
+        lam_diff_s = (lam_h - lam_a) / lam_total_s
+    else:
+        lam_diff_s = 0.0
+    sig2_h = lam_diff_s
+    sig2_a = -lam_diff_s
+
+    # SIGNAL 3: Danger difference (15%)
+    danger_total_s = danger_h + danger_a
+    if danger_total_s > 1e-9:
+        danger_diff_s = (danger_h - danger_a) / danger_total_s
+    else:
+        danger_diff_s = 0.0
+    sig3_h = danger_diff_s
+    sig3_a = -danger_diff_s
+
+    # SIGNAL 4: Momentum (15%)
+    sig4_h = clamp(momentum, -1.0, 1.0)
+    sig4_a = -sig4_h
+
+    # SIGNAL 5: Pressure difference (10%)
+    pressure_total_s = pressure_h + pressure_a
+    if pressure_total_s > 1e-9:
+        press_diff_s = (pressure_h - pressure_a) / pressure_total_s
+    else:
+        press_diff_s = 0.0
+    sig5_h = press_diff_s
+    sig5_a = -press_diff_s
+
+    # SIGNAL 6: xG difference (10%)
+    xg_total_s = xg_h + xg_a
+    if xg_total_s > 1e-9:
+        xg_diff_s = (xg_h - xg_a) / xg_total_s
+    else:
+        xg_diff_s = 0.0
+    sig6_h = xg_diff_s
+    sig6_a = -xg_diff_s
+
+    # ============================================================
+    # REAL SIGNAL AGREEMENT (ANTI DUPLICATE)
+    # ============================================================
+
+    signals = 0
+
+    if abs(sig4_h) > 0.15:
+        signals += 1
+
+    if abs(sig3_h) > 0.12:
+        signals += 1
+
+    if abs(sig5_h) > 0.12:
+        signals += 1
+
+    if abs(sig2_h) > 0.10:
+        signals += 1
+
+    if abs(sig6_h) > 0.08:
+        signals += 1
+
+    # SIGNAL 7: SOT ratio (part of game type weight)
+    sot_total_s = sot_h + sot_a
+    if sot_total_s > 1e-9:
+        sot_diff_s = (sot_h - sot_a) / sot_total_s
+    else:
+        sot_diff_s = 0.0
+
+    # ============================================================
+    # SAFE TEMPO MULTIPLIER
+    # ============================================================
+
+    if tempo_danger > 1.5:
+        tempo_mult = 1.05
+    elif tempo_danger > 1.2:
+        tempo_mult = 1.03
+    elif tempo_danger < 0.8:
+        tempo_mult = 0.95
+    else:
+        tempo_mult = 1.0
+
+    # ============================================================
+    # fix-8: TEMPO FAKE LIMIT
+    # ============================================================
+
+    if tempo_danger > 2.0:
+        tempo_mult = min(tempo_mult, 1.03)
+
+    # GAME TYPE MODIFIER (boosts dominant side in aggressive game types)
+    gt_boost_h = 0.0
+    gt_boost_a = 0.0
+    if game_type in ("PRESSURE", "ATTACK_WAVE", "CHAOS"):
+        if danger_diff_s > 0:
+            gt_boost_h = 0.15
+        else:
+            gt_boost_a = 0.15
+
+    # MINUTE PENALTY (84+ = smaller attack multiplier)
+    if minute >= 84:
+        minute_mult = 0.85
+    elif minute >= 80:
+        minute_mult = 0.92
+    else:
+        minute_mult = 1.0
+
+    # WEIGHTED COMPOSITE SCORES
+    score_h = (
+        W_PNEXT * sig1_h +
+        W_LAMBDA * sig2_h +
+        W_DANGER * sig3_h +
+        W_MOMENTUM * sig4_h +
+        W_PRESSURE * sig5_h +
+        W_XG * sig6_h +
+        W_GAMETYPE * (sot_diff_s + gt_boost_h)
+    ) * tempo_mult * minute_mult
+
+    score_a = (
+        W_PNEXT * sig1_a +
+        W_LAMBDA * sig2_a +
+        W_DANGER * sig3_a +
+        W_MOMENTUM * sig4_a +
+        W_PRESSURE * sig5_a +
+        W_XG * sig6_a +
+        W_GAMETYPE * (-sot_diff_s + gt_boost_a)
+    ) * tempo_mult * minute_mult
+
+    # ============================================================
+    # COUNTER ATTACK DETECTOR
+    # ============================================================
+
+    counter_risk = False
+
+    if danger_h > danger_a * 0.9 and sot_h < sot_a:
+        if momentum < 0.05:
+            counter_risk = True
+
+    if counter_risk:
+        score_h *= 1.15
+        score_a *= 0.85
+
+    no_real_dominance = no_real_dominance or (signals <= 2)
+
+    # ============================================================
+    # NO REAL DOMINANCE APPLY (EXACT FIX)
+    # ============================================================
+    if no_real_dominance:
+        score_h = score_h * 0.35
+        score_a = score_a * 0.35
+
+    # ============================================================
+    # fix-7: SCORE BALANCER (ANTI DOMINATION BUG)
+    # ============================================================
+
+    score_diff_smart = abs(score_h - score_a)
+    if score_diff_smart > 0.35:
+        score_h *= 0.85
+        score_a *= 0.85
+
+    # PREDICTION
+    prediction = "HOME" if score_h >= score_a else "AWAY"
+
+    # ============================================================
+    # fix-9: DRAW SAFETY
+    # ============================================================
+
+    if abs(score_h - score_a) < 0.10:
+        prediction = "NO BET"
+
+    # CONFIDENCE SCORE (agreement % across 7 directional signals)
+    if prediction == "HOME":
+        agree = [
+            sig1_h > 0,
+            sig2_h > 0,
+            sig3_h > 0,
+            sig4_h > 0,
+            sig5_h > 0,
+            sig6_h > 0,
+            sot_diff_s > 0,
+        ]
+    else:
+        agree = [
+            sig1_a > 0,
+            sig2_a > 0,
+            sig3_a > 0,
+            sig4_a > 0,
+            sig5_a > 0,
+            sig6_a > 0,
+            sot_diff_s < 0,
+        ]
+
+    agreement_count = sum(agree)
+    confidence = round(agreement_count / TOTAL_SIGNALS, 3)
+
+    # ============================================================
+    # ANTI OVERCONFIDENCE
+    # ============================================================
+
+    if abs(momentum) < 0.08:
+        confidence *= 0.75
+
+    if abs(danger_h - danger_a) < 0.2 * max(1, danger_h + danger_a):
+        confidence *= 0.80
+
+    if pressure_h < 8 and pressure_a < 8:
+        confidence *= 0.85
+
+    # ============================================================
+    # fix-6: HARD CONFIDENCE KILLER (ANTI SURE BET)
+    # ============================================================
+
+    if confidence > 0.75:
+        confidence *= 0.85
+
+    if confidence > 0.85:
+        confidence = 0.78
+
+    confidence = round(confidence, 3)
+
+    return {
+        "prediction": prediction,
+        "confidence": confidence,
+        "score_h": round(score_h, 4),
+        "score_a": round(score_a, 4),
+        "signals_agreement": agreement_count,
+        "tempo_mult": round(tempo_mult, 3),
+        "minute_mult": round(minute_mult, 3),
+    }
+
+
+# ============================================================
 # BALANCE COUNTER FILTER
 # ============================================================
 def cfos_balance_counter(danger_h, danger_a, shots_h, shots_a, counter_goal):
@@ -1974,6 +2286,12 @@ def lge_notes(game_type, tempo_notes, xgr_notes, wave_active=False):
 
 
 def predlog_stave(r):
+    # ============================================================
+    # fix-5: GLOBAL NO SURE BET FILTER (CRITICAL)
+    # ============================================================
+    if r.get("confidence", 0) >= 0.80:
+        return "NO BET", "OVERCONFIDENCE BLOCK"
+
     # 1) Najprej verjetnost izida, ne edge
     if r["mc_x_adj"] >= 0.60:
         return "X", "DRAW DOMINANT"
@@ -4019,7 +4337,8 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         "mc_a_adj": mc_a_adj,
         "p_goal": p_goal,
         "p_no_goal": p_no_goal,
-        "top_scores": top_scores
+        "top_scores": top_scores,
+        "confidence": next_goal_prediction_smart.get("confidence", 0),
     })
 
     if minute >= 75 and odds_draw < 1.55:
@@ -4100,6 +4419,25 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         game_type=game_type,
     )
 
+    next_goal_prediction_smart = predict_next_goal_smart(
+        p_home_next=p_home_next,
+        p_away_next=p_away_next,
+        lam_h=lam_h,
+        lam_a=lam_a,
+        danger_h=danger_h,
+        danger_a=danger_a,
+        xg_h=xg_h,
+        xg_a=xg_a,
+        momentum=momentum,
+        pressure_h=pressure_h,
+        pressure_a=pressure_a,
+        tempo_danger=tempo_danger,
+        sot_h=sot_h,
+        sot_a=sot_a,
+        game_type=game_type,
+        minute=minute,
+    )
+
     counter_goal_raw = next_goal_bet if normalize_outcome_label(next_goal_bet) in ("HOME", "AWAY") else next_goal_prediction
     dominant_side, counter_goal = cfos_balance_counter(
         danger_h,
@@ -4138,6 +4476,7 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         "p_home_next": p_home_next, "p_away_next": p_away_next,
         "next_goal_prediction": next_goal_prediction,
         "next_goal_bet": next_goal_bet, "next_goal_reason": next_goal_reason,
+        "next_goal_prediction_smart": next_goal_prediction_smart,
         "dominant_side": dominant_side, "counter_goal": counter_goal, "counter_blocked": counter_blocked,
         "p_goal_5": p_goal_5, "p_goal_10": p_goal_10,
         "mc_h_raw": mc_h_raw, "mc_x_raw": mc_x_raw, "mc_a_raw": mc_a_raw,
