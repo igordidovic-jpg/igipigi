@@ -2715,8 +2715,8 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     dribble_h = get_num(data, 98)
     dribble_a = get_num(data, 99)
 
-    final_third_h = get_num(data, 100)
-    final_third_a = get_num(data, 101)
+    final_third_fm_h = get_num(data, 100)
+    final_third_fm_a = get_num(data, 101)
 
     long_ball_h = get_num(data, 102)
     long_ball_a = get_num(data, 103)
@@ -2751,11 +2751,6 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     if final_third_h == 0 and final_third_fm_h > 0:
         final_third_h = final_third_fm_h
 
-    if final_third_a == 0 and final_third_fm_a > 0:
-        final_third_a = final_third_fm_a
-
-    if final_third_h == 0 and final_third_fm_h > 0:
-        final_third_h = final_third_fm_h
     if final_third_a == 0 and final_third_fm_a > 0:
         final_third_a = final_third_fm_a
 
@@ -3800,14 +3795,6 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     # CFOS OVERPRESSURE + HIGH LAMBDA + COUNTER EQUALIZER
     # ============================================================
 
-    lam_ratio = 0.0
-    high_tempo = False
-    high_lambda = False
-    no_wave = True
-    overpressure_home = False
-    overpressure_away = False
-    leading_side = "DRAW"
-
     if minute >= 55:
 
         score_diff = score_home - score_away
@@ -3863,6 +3850,9 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
                 lam_a *= 1.22
                 lam_c += 0.08
 
+        else:
+            leading_side = "DRAW"
+
         if lam_total > 1.55:
             lam_h *= 0.92
             lam_a *= 0.92
@@ -3875,6 +3865,15 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         lam_a = clamp(lam_a, 0.0, 1.60)
         lam_c = clamp(lam_c, 0.0, 0.20)
         lam_total = lam_h + lam_a + lam_c
+
+    else:
+        lam_ratio = 0.0
+        high_tempo = False
+        high_lambda = False
+        no_wave = True
+        overpressure_home = False
+        overpressure_away = False
+        leading_side = "DRAW"
 
     # ============================================================
     # UPSET FILTER
@@ -4694,6 +4693,7 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         "p_goal_5": p_goal_5, "p_goal_10": p_goal_10,
         "mc_h_raw": mc_h_raw, "mc_x_raw": mc_x_raw, "mc_a_raw": mc_a_raw,
         "mc_h_adj": mc_h_adj, "mc_x_adj": mc_x_adj, "mc_a_adj": mc_a_adj,
+        "meta_home": mc_h_adj, "meta_draw": mc_x_adj, "meta_away": mc_a_adj,
         "lf_goal": lf_goal, "n_goal": n_goal, "rh": rh, "rx": rx, "ra": ra, "n_1x2": n_1x2,
         "timeline": timeline, "wave": wave, "game_type": game_type,
         "tempo_shots": tempo_shots, "tempo_att": tempo_att, "tempo_danger": tempo_danger,
@@ -5683,9 +5683,9 @@ def izpis_rezultata(r):
     print(f"D  {r['rx']:.3f}   ({pd:+.1f}%)   ≈ {d_est}/{r['n_1x2']}   → {d_pct:.1f}%")
     print(f"A  {r['ra']:.3f}   ({pa:+.1f}%)   ≈ {a_est}/{r['n_1x2']}   → {a_pct:.1f}%")
 
-    print_live_match_memory(r)
-
     print_razumevanje(r)
+
+    print_live_match_memory(r)
 
     print_live_tempo_rate(r)
 
