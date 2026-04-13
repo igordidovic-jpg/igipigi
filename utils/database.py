@@ -261,17 +261,19 @@ class Database:
         if not AIOSQLITE_AVAILABLE or not self._initialized:
             return
 
-        valid_keys = {"alert_level", "language", "preset"}
-        if key not in valid_keys:
+        # Whitelist map prevents any SQL injection via column name
+        col_map = {"alert_level": "alert_level", "language": "language", "preset": "preset"}
+        if key not in col_map:
             return
+        col = col_map[key]
 
         now = datetime.utcnow().isoformat()
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 f"""
-                INSERT INTO user_preferences (user_id, {key}, updated_at)
+                INSERT INTO user_preferences (user_id, {col}, updated_at)
                 VALUES (?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET {key} = ?, updated_at = ?
+                ON CONFLICT(user_id) DO UPDATE SET {col} = ?, updated_at = ?
                 """,
                 (user_id, value, now, value, now),
             )

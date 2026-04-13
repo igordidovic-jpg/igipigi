@@ -186,6 +186,54 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def _handle_csv_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                               csv_data: str, lang: str, user_id: int):
+    """Shared CSV analysis logic used by cmd_csv and handle_message."""
+    progress_msg = await update.message.reply_text(
+        msg(lang, "analyzing"),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, lambda: analyze_csv(csv_data))
+
+        if result is None:
+            await progress_msg.edit_text(msg(lang, "error"))
+            return
+
+        decision = result.get("_decision") or BetScorer.extract_decision(result)
+        score_home = int(float(result.get("score_home", 0) or 0))
+        score_away = int(float(result.get("score_away", 0) or 0))
+
+        bet_msg = BetScorer.format_telegram_message(decision, score_home, score_away)
+        if result.get("_cached"):
+            bet_msg += f"\n\n{msg(lang, 'cached')}"
+
+        alert_level = await get_user_alert(user_id)
+        if should_alert(decision["bet"], decision["confidence"], alert_level):
+            await progress_msg.edit_text(bet_msg, parse_mode=ParseMode.MARKDOWN)
+        else:
+            note = f"\n\n_Alert level {alert_level}: This bet did not meet threshold_"
+            await progress_msg.edit_text(bet_msg + note, parse_mode=ParseMode.MARKDOWN)
+
+        await db.save_match(user_id, decision, csv_data, score_home, score_away)
+
+        logger.info(
+            "CSV analysis complete",
+            extra={
+                "user_id": user_id,
+                "match": f"{decision['home']} vs {decision['away']}",
+                "bet": decision["bet"],
+                "confidence": decision["confidence"],
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"CSV analysis error: {e}", exc_info=True)
+        await progress_msg.edit_text(msg(lang, "error"))
+
+
 async def cmd_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /csv command - analyze match CSV data."""
     user_id = update.effective_user.id
@@ -202,55 +250,7 @@ async def cmd_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Show analyzing message
-    progress_msg = await update.message.reply_text(
-        msg(lang, "analyzing"),
-        parse_mode=ParseMode.MARKDOWN,
-    )
-
-    try:
-        # Run analysis (in executor to avoid blocking)
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, lambda: analyze_csv(csv_data))
-
-        if result is None:
-            await progress_msg.edit_text(msg(lang, "error"))
-            return
-
-        decision = result.get("_decision") or BetScorer.extract_decision(result)
-        score_home = int(float(result.get("score_home", 0) or 0))
-        score_away = int(float(result.get("score_away", 0) or 0))
-
-        # Format message
-        bet_msg = BetScorer.format_telegram_message(decision, score_home, score_away)
-        if result.get("_cached"):
-            bet_msg += f"\n\n{msg(lang, 'cached')}"
-
-        # Check alert level
-        alert_level = await get_user_alert(user_id)
-        if should_alert(decision["bet"], decision["confidence"], alert_level):
-            await progress_msg.edit_text(bet_msg, parse_mode=ParseMode.MARKDOWN)
-        else:
-            # Still show result but with note about alert level
-            note = f"\n\n_Alert level {alert_level}: This bet did not meet threshold_"
-            await progress_msg.edit_text(bet_msg + note, parse_mode=ParseMode.MARKDOWN)
-
-        # Save to database
-        await db.save_match(user_id, decision, csv_data, score_home, score_away)
-
-        logger.info(
-            f"CSV analysis complete",
-            extra={
-                "user_id": user_id,
-                "match": f"{decision['home']} vs {decision['away']}",
-                "bet": decision["bet"],
-                "confidence": decision["confidence"],
-            },
-        )
-
-    except Exception as e:
-        logger.error(f"cmd_csv error: {e}", exc_info=True)
-        await progress_msg.edit_text(msg(lang, "error"))
+    await _handle_csv_analysis(update, context, csv_data=csv_data, lang=lang, user_id=user_id)
 
 
 async def cmd_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -312,7 +312,7 @@ async def cmd_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, lambda: analyze_csv(csv_data))
 
         if result is None:
@@ -526,11 +526,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = await get_user_lang(user_id)
 
-    # If it looks like CSV data (contains commas and numbers), analyze it
+    # If it looks like CSV data (contains commas and numbers), analyze it directly
     if "," in text and any(c.isdigit() for c in text):
-        # Simulate /csv command
-        update.message.text = f"/csv {text}"
-        await cmd_csv(update, context)
+        await _handle_csv_analysis(update, context, csv_data=text, lang=lang, user_id=user_id)
     else:
         await update.message.reply_text(
             "❓ Unknown command. Type /start for help.",
