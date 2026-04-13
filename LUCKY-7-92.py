@@ -2981,7 +2981,7 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     final_third_fm_h = final_third_fm_h or 0
     final_third_fm_a = final_third_fm_a or 0
 
-    # Use match-memory final_third values as fallback when CSV has none
+    # Use match-memory final_third values as fallback when CSV values are zero (home and away)
     if final_third_h == 0 and final_third_fm_h > 0:
         final_third_h = final_third_fm_h
 
