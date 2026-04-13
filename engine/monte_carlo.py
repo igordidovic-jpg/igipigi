@@ -58,9 +58,11 @@ def _poisson_sample(lam: float) -> int:
     """Sample from Poisson distribution."""
     if lam <= 0:
         return 0
+    # Cap at 30 to prevent underflow in exp(-lam) for very large rates
     L = math.exp(-min(lam, 30))
     k = 0
     p = 1.0
+    # Cap at 12: practical maximum goals per remaining match window (prevents infinite loops)
     while p > L and k < 12:
         k += 1
         p *= random.random()

@@ -63,6 +63,9 @@ db = Database()
 # Live tracking sessions: {user_id: {home, away, updates: []}}
 live_sessions: dict[int, dict] = {}
 
+# Maximum number of recent live updates to show in the session timeline
+MAX_TIMELINE_UPDATES = 5
+
 # ============================================================
 # MESSAGES (SLO / ENG)
 # ============================================================
@@ -150,7 +153,15 @@ def msg(lang: str, key: str, **kwargs) -> str:
     return text
 
 
-def should_alert(bet: str, confidence: str, alert_level: str) -> bool:
+def _safe_int_from_result(value, default: int = 0) -> int:
+    """Convert a model result value to int safely."""
+    try:
+        return int(float(value or default))
+    except (TypeError, ValueError):
+        return default
+
+
+
     """
     Determine whether to send an alert based on user's alert level setting.
 
@@ -203,8 +214,8 @@ async def _handle_csv_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         decision = result.get("_decision") or BetScorer.extract_decision(result)
-        score_home = int(float(result.get("score_home", 0) or 0))
-        score_away = int(float(result.get("score_away", 0) or 0))
+        score_home = _safe_int_from_result(result.get("score_home", 0))
+        score_away = _safe_int_from_result(result.get("score_away", 0))
 
         bet_msg = BetScorer.format_telegram_message(decision, score_home, score_away)
         if result.get("_cached"):
@@ -320,8 +331,8 @@ async def cmd_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         decision = result.get("_decision") or BetScorer.extract_decision(result)
-        score_home = int(float(result.get("score_home", 0) or 0))
-        score_away = int(float(result.get("score_away", 0) or 0))
+        score_home = _safe_int_from_result(result.get("score_home", 0))
+        score_away = _safe_int_from_result(result.get("score_away", 0))
         minute = decision.get("minute", 0)
 
         # Update session
@@ -344,7 +355,7 @@ async def cmd_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         # Add update timeline
-        updates = live_sessions[user_id]["updates"][-5:]  # last 5 updates
+        updates = live_sessions[user_id]["updates"][-MAX_TIMELINE_UPDATES:]
         if len(updates) > 1:
             timeline = "\n*📊 Session timeline:*\n"
             for u in updates:

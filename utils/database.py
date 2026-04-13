@@ -261,22 +261,31 @@ class Database:
         if not AIOSQLITE_AVAILABLE or not self._initialized:
             return
 
-        # Whitelist map prevents any SQL injection via column name
-        col_map = {"alert_level": "alert_level", "language": "language", "preset": "preset"}
-        if key not in col_map:
+        # Use separate SQL strings per column to fully avoid f-string interpolation
+        _SQL_SET_PREF: dict[str, str] = {
+            "alert_level": """
+                INSERT INTO user_preferences (user_id, alert_level, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET alert_level = ?, updated_at = ?
+            """,
+            "language": """
+                INSERT INTO user_preferences (user_id, language, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET language = ?, updated_at = ?
+            """,
+            "preset": """
+                INSERT INTO user_preferences (user_id, preset, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET preset = ?, updated_at = ?
+            """,
+        }
+        if key not in _SQL_SET_PREF:
             return
-        col = col_map[key]
+        sql = _SQL_SET_PREF[key]
 
         now = datetime.utcnow().isoformat()
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                f"""
-                INSERT INTO user_preferences (user_id, {col}, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET {col} = ?, updated_at = ?
-                """,
-                (user_id, value, now, value, now),
-            )
+            await db.execute(sql, (user_id, value, now, value, now))
             await db.commit()
 
     async def save_live_session(self, user_id: int, home: str, away: str, data: dict):
