@@ -505,7 +505,9 @@ def match_signal(p_goal, p_home_next, p_away_next):
 def next_goal_bet_engine(p_home_next, p_away_next, lam_h, lam_a, momentum, tempo_shots, tempo_danger, game_type):
     home_ng = float(p_home_next or 0.0)
     away_ng = float(p_away_next or 0.0)
-    lam_diff = float(lam_h or 0.0) - float(lam_a or 0.0)
+    lam_h = float(lam_h or 0.0)
+    lam_a = float(lam_a or 0.0)
+    lam_diff = lam_h - lam_a
     momentum = float(momentum or 0.0)
     tempo_high = float(tempo_shots or 0.0) > 0.18 or float(tempo_danger or 0.0) > 1.2
     game_type = str(game_type or "")
@@ -524,12 +526,22 @@ def next_goal_bet_engine(p_home_next, p_away_next, lam_h, lam_a, momentum, tempo
     next_goal_bet = "NO BET"
     next_goal_reason = "LOW EDGE"
 
+    # Edge filter: skip bet when margin is too small
+    if abs(home_ng - away_ng) < 0.08:
+        return next_goal_prediction, "NO BET", "EDGE TOO SMALL"
+
     if home_ng > 0.57 and lam_diff > 0.35 and momentum > 0.18:
         next_goal_bet = "HOME"
         next_goal_reason = "STRONG HOME PRESSURE"
+    elif home_ng > 0.52 and lam_diff > 0.20 and momentum > 0.10:
+        next_goal_bet = "HOME"
+        next_goal_reason = "HOME MOMENTUM + LAMBDA"
     elif away_ng > 0.42 and momentum < -0.12:
         next_goal_bet = "AWAY"
         next_goal_reason = "AWAY MOMENTUM"
+    elif away_ng > 0.38 and lam_diff < -0.20 and momentum < -0.08:
+        next_goal_bet = "AWAY"
+        next_goal_reason = "AWAY LAMBDA + MOMENTUM"
     elif home_ng > 0.53 and away_ng > 0.28 and abs(momentum) < 0.20 and tempo_high:
         next_goal_bet = "AWAY"
         next_goal_reason = "FAKE HOME PRESSURE"
@@ -563,6 +575,10 @@ def predict_next_goal_smart(
     p_goal=None,
     mc_draw=None,
     hist_draw=None,
+    final_third_h=None,
+    final_third_a=None,
+    gk_saves_h=None,
+    gk_saves_a=None,
 ):
     """
     Smart next goal prediction with 8+ weighted signals and confidence score.
@@ -594,6 +610,10 @@ def predict_next_goal_smart(
     p_goal = float(p_goal) if p_goal is not None else None
     mc_draw = float(mc_draw) if mc_draw is not None else None
     hist_draw = float(hist_draw) if hist_draw is not None else None
+    final_third_h = float(final_third_h) if final_third_h is not None else 0.0
+    final_third_a = float(final_third_a) if final_third_a is not None else 0.0
+    gk_saves_h = float(gk_saves_h) if gk_saves_h is not None else 0.0
+    gk_saves_a = float(gk_saves_a) if gk_saves_a is not None else 0.0
 
     # ============================================================
     # NO REAL DOMINANCE FILTER (SAFE - CFOS COMPATIBLE)
@@ -625,7 +645,7 @@ def predict_next_goal_smart(
     W_PRESSURE = 0.10
     W_XG = 0.10
     W_GAMETYPE = 0.05
-    TOTAL_SIGNALS = 7  # number of directional signals used for confidence
+    TOTAL_SIGNALS = 9  # number of directional signals used for confidence
 
     # SIGNAL 1: P(next) probability (25%)
     p_total = p_home_next + p_away_next
@@ -711,6 +731,39 @@ def predict_next_goal_smart(
     else:
         sot_diff_s = 0.0
 
+    # SIGNAL 8: Pitch Zone (final_third entries)
+    ft_total_s = final_third_h + final_third_a
+    if ft_total_s > 1e-9:
+        ft_diff_s = (final_third_h - final_third_a) / ft_total_s
+    else:
+        ft_diff_s = 0.0
+    sig8_h = ft_diff_s
+    sig8_a = -ft_diff_s
+
+    # pitch_zone_factor: amplify score for team with dominant final_third entries
+    pitch_zone_factor_h = 1.0
+    pitch_zone_factor_a = 1.0
+    if final_third_h > max(1.0, final_third_a * 1.3):
+        pitch_zone_factor_h = 1.08
+    elif final_third_a > max(1.0, final_third_h * 1.3):
+        pitch_zone_factor_a = 1.08
+
+    # SIGNAL 9: GK Activity (keeper saves as danger indicator)
+    gk_total_s = gk_saves_h + gk_saves_a
+    sig9_h = 0.0
+    sig9_a = 0.0
+    if gk_total_s > 1e-9:
+        gk_diff_s = (gk_saves_h - gk_saves_a) / gk_total_s
+        # More saves on HOME keeper → AWAY is more dangerous
+        sig9_h = -gk_diff_s
+        sig9_a = gk_diff_s
+
+    # count new signals for no_real_dominance check
+    if abs(sig8_h) > 0.12:
+        signals += 1
+    if abs(sig9_h) > 0.10:
+        signals += 1
+
     # ============================================================
     # SAFE TEMPO MULTIPLIER
     # ============================================================
@@ -750,7 +803,7 @@ def predict_next_goal_smart(
         W_PRESSURE * sig5_h +
         W_XG * sig6_h +
         W_GAMETYPE * (sot_diff_s + gt_boost_h)
-    ) * tempo_mult * minute_mult
+    ) * tempo_mult * minute_mult * pitch_zone_factor_h
 
     score_a = (
         W_PNEXT * sig1_a +
@@ -760,7 +813,7 @@ def predict_next_goal_smart(
         W_PRESSURE * sig5_a +
         W_XG * sig6_a +
         W_GAMETYPE * (-sot_diff_s + gt_boost_a)
-    ) * tempo_mult * minute_mult
+    ) * tempo_mult * minute_mult * pitch_zone_factor_a
 
     # ============================================================
     # COUNTER / FAKE PRESSURE / GAME CONTEXT DETECTOR
@@ -796,7 +849,7 @@ def predict_next_goal_smart(
                 counter_risk = True
 
     if fake_pressure:
-        score_h *= 0.74
+        score_h *= 0.55
         score_a *= 0.92
 
     if counter_risk and score_diff < 0:
@@ -825,7 +878,7 @@ def predict_next_goal_smart(
     if abs(score_h - score_a) < 0.05:
         prediction = "NO BET"
 
-    # CONFIDENCE SCORE (agreement % across 7 directional signals)
+    # CONFIDENCE SCORE (agreement % across 9 directional signals)
     if prediction == "HOME":
         agree = [
             sig1_h > 0,
@@ -835,6 +888,8 @@ def predict_next_goal_smart(
             sig5_h > 0,
             sig6_h > 0,
             sot_diff_s > 0,
+            sig8_h > 0,
+            sig9_h > 0,
         ]
     else:
         agree = [
@@ -845,6 +900,8 @@ def predict_next_goal_smart(
             sig5_a > 0,
             sig6_a > 0,
             sot_diff_s < 0,
+            sig8_a > 0,
+            sig9_a > 0,
         ]
 
     agreement_count = sum(agree)
@@ -3976,14 +4033,19 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
     counter_boost_home = 1.0
     counter_boost_away = 1.0
+    MAX_COUNTER_BOOST = 1.70  # hard cap to prevent runaway lambda amplification
 
     if score_diff < 0 and minute >= 70:
         if momentum > 0.12 and lam_a < 0.40:
-            counter_boost_away = 1.35
+            # Enhanced: scale boost with xG quality of away team
+            xg_quality_boost = 1.15 if (xg_a > 0 and xg_h > 0 and xg_a > xg_h) else 1.0
+            counter_boost_away = min(1.55 * xg_quality_boost, MAX_COUNTER_BOOST)
 
     if score_diff > 0 and minute >= 70:
         if momentum < -0.12 and lam_h < 0.40:
-            counter_boost_home = 1.35
+            # Enhanced: scale boost with xG quality of home team
+            xg_quality_boost = 1.15 if (xg_h > 0 and xg_a > 0 and xg_h > xg_a) else 1.0
+            counter_boost_home = min(1.55 * xg_quality_boost, MAX_COUNTER_BOOST)
 
     lam_h *= counter_boost_home
     lam_a *= counter_boost_away
@@ -4717,7 +4779,11 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         hist_away=hist_away,
         p_goal=p_goal,
         mc_draw=mc_x_adj,
-        hist_draw=hist_bias.get("draw") if isinstance(hist_bias, dict) else None,
+        hist_draw=hist_draw,
+        final_third_h=final_third_h,
+        final_third_a=final_third_a,
+        gk_saves_h=gk_saves_h,
+        gk_saves_a=gk_saves_a,
     )
 
     # ============================================================
@@ -4730,7 +4796,7 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     # FINAL NEXT GOAL ARBITER (ENGINE LOCK)
     # uskladi smart engine, raw p_goal in draw-heavy state v en končni signal
     # ============================================================
-    draw_heavy_state = max(float(mc_x_adj or 0.0), float((hist_bias or {}).get("draw", 0.0) or 0.0))
+    draw_heavy_state = max(float(mc_x_adj or 0.0), float(hist_draw or 0.0))
     low_goal_state = p_goal < 0.50
 
     if low_goal_state:
@@ -4744,6 +4810,13 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
     if draw_heavy_state >= 0.55 and p_goal < 0.50:
         if ng_smart_conf < 0.62:
+            # ng_smart_pred blocked; next_goal_bet will be cleared by guards below
+            ng_smart_pred = "NO BET"
+
+    # Quantitative DRAW pressure test: block bet when draw signal is dominant
+    if draw_heavy_state >= 0.58 and p_goal < 0.55:
+        if ng_smart_conf < 0.68:
+            # ng_smart_pred blocked; next_goal_bet will be cleared by guards below
             ng_smart_pred = "NO BET"
 
     if p_goal < 0.35:
@@ -4751,12 +4824,17 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         if ng_smart_conf < 0.70:
             ng_smart_pred = "NO BET"
 
-    if ng_smart_pred in ("HOME", "AWAY") and ng_smart_conf >= 0.57:
+    # SMART ENGINE PRIORITY: use smart pred whenever confidence is sufficient
+    if ng_smart_pred in ("HOME", "AWAY") and ng_smart_conf >= 0.52:
         next_goal_prediction = ng_smart_pred
 
-    if next_goal_bet == "NO BET" and ng_smart_pred in ("HOME", "AWAY") and ng_smart_conf >= 0.64 and p_goal >= 0.30 and draw_heavy_state < 0.60:
+    # Activate smart bet with tighter threshold
+    if next_goal_bet == "NO BET" and ng_smart_pred in ("HOME", "AWAY") and ng_smart_conf >= 0.60 and p_goal >= 0.30 and draw_heavy_state < 0.60:
         next_goal_bet = ng_smart_pred
         next_goal_reason = "SMART NEXT GOAL ALIGNMENT"
+    elif ng_smart_pred in ("HOME", "AWAY") and ng_smart_conf >= 0.72 and p_goal >= 0.30 and draw_heavy_state < 0.55:
+        next_goal_bet = ng_smart_pred
+        next_goal_reason = "SMART HIGH CONFIDENCE"
 
     # ============================================================
     # NEXT GOAL SAFETY GUARDS 2 & 3 (FINAL OVERRIDE AFTER SMART ALIGNMENT)
