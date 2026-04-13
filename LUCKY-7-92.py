@@ -4,6 +4,96 @@
 # ZAČETEK DELA 1 / 8
 # OSNOVA SISTEMA
 # ============================================================
+#
+# ============================================================
+# SYSTEM DOCUMENTATION
+# ============================================================
+# CFOS-XG PRO 75 TITAN is an advanced live football analytics
+# and betting decision engine. It processes real-time match
+# statistics to produce probabilistic bet recommendations.
+#
+# ARCHITECTURE (8 MAJOR PARTS):
+#   PART 1 (Lines 1-317)       OSNOVA     - Setup, colors, helpers
+#   PART 2 (Lines 319-1581)    ENGINE     - Poisson / Tempo / Market
+#   PART 3 (Lines 1585-1839)   LEARNING   - Historical data engine
+#   PART 4 (Lines 1843-1987)   SNAPSHOT   - Data collection system
+#   PART 5 (Lines 1997-2350)   MEMORY     - Match memory / timeline / attack wave
+#   PART 6 (Lines 2359-2519)   HISTORY    - History score / exact score
+#   PART 7 (Lines 2527-7299)   MODEL      - Core calculation engine
+#   PART 8 (Lines 7300-7549)   OUTPUT     - Izpis / analiza / main
+#
+# KEY FUNCTIONS:
+#   izracunaj_model(data)         - Computes all match metrics from CSV row
+#   predict_next_goal_smart(...)  - 9-signal weighted consensus predictor
+#   bet_decision(r)               - Master bet decision engine
+#   print_live_match_memory(r)    - Prints timeline / attack wave section
+#
+# CSV INPUT FORMAT (comma-separated, 32+ columns):
+#   Col 0:  home team name
+#   Col 1:  away team name
+#   Col 2:  odds_home   (e.g. 2.10)
+#   Col 3:  odds_draw   (e.g. 3.30)
+#   Col 4:  odds_away   (e.g. 3.50)
+#   Col 5:  minute      (e.g. 68)
+#   Col 6:  score_home  (e.g. 1)
+#   Col 7:  score_away  (e.g. 0)
+#   Col 8:  xg_home     (e.g. 0.80)
+#   Col 9:  xg_away     (e.g. 0.50)
+#   Col 10: shots_home
+#   Col 11: shots_away
+#   Col 12: sot_home    (shots on target)
+#   Col 13: sot_away
+#   Col 14: attacks_home
+#   Col 15: attacks_away
+#   Col 16: danger_home
+#   Col 17: danger_away
+#   Col 18: big_chances_home
+#   Col 19: big_chances_away
+#   Col 20: yellow_home
+#   Col 21: yellow_away
+#   Col 22: red_home
+#   Col 23: red_away
+#   Col 24: possession_home (%)
+#   Col 25: possession_away (%)
+#   Col 26: blocked_home
+#   Col 27: blocked_away
+#   Col 28: bcm_home    (big chances missed)
+#   Col 29: bcm_away
+#   Col 30: corners_home
+#   Col 31: corners_away
+#
+# EXAMPLE INPUT:
+#   "Arsenal,Chelsea,2.10,3.30,3.80,68,1,0,0.80,0.50,6,4,3,2,22,18,8,5,2,1,1,0,0,0,58,42,1,2,0,1,5,3"
+#
+# EXAMPLE OUTPUT:
+#   =============== BET DECISION ===============
+#   MINUTE: 68
+#   BET: NEXT GOAL HOME
+#   CONFIDENCE: HIGH
+#   VALID: 68-73
+#   ============================================
+#
+# BET DECISION PHASES:
+#   Phase 1 (<45 min)   : Always NO BET (insufficient data)
+#   Phase 2 (45-55 min) : Wait for signal activation
+#   Phase 3 (55-75 min) : NEXT GOAL SMART top priority (conf >= 0.72)
+#   Phase 4 (70+ min)   : MASTER FREEZE FILTER blocks fake signals
+#   Phase 5 (any)       : UNIVERSAL SCORING - 7 bet types scored, winner picked
+#
+# BET TYPES:
+#   NEXT GOAL HOME  - Home team scores next
+#   NEXT GOAL AWAY  - Away team scores next
+#   COMEBACK HOME   - Home team equalises / overtakes
+#   COMEBACK AWAY   - Away team equalises / overtakes
+#   DRAW            - Score stays level
+#   NO GOAL         - No more goals in match
+#   NO BET          - Insufficient edge, wait
+#
+# CONFIDENCE LEVELS:
+#   HIGH   - top_score >= 7.5 AND gap >= 1.0
+#   MEDIUM - top_score >= 5.5 AND gap >= 0.5
+#   LOW    - all other cases
+# ============================================================
 
 import math
 import random
@@ -795,24 +885,30 @@ def predict_next_goal_smart(
         minute_mult = 1.0
 
     # WEIGHTED COMPOSITE SCORES
+    # Each signal contributes its weight × normalised directional value (-1 to +1).
+    # Positive score_h means model favours home as next goalscorer; negative means away.
+    # Multipliers applied after summation:
+    #   tempo_mult        — amplifies score when match tempo is high (>1.5 danger/min)
+    #   minute_mult       — reduces score in final minutes (84+) to avoid late overconfidence
+    #   pitch_zone_factor — boosts the side dominating final-third entries (>30% advantage)
     score_h = (
-        W_PNEXT * sig1_h +
-        W_LAMBDA * sig2_h +
-        W_DANGER * sig3_h +
-        W_MOMENTUM * sig4_h +
-        W_PRESSURE * sig5_h +
-        W_XG * sig6_h +
-        W_GAMETYPE * (sot_diff_s + gt_boost_h)
+        W_PNEXT * sig1_h +        # 25% — p(next goal) probability
+        W_LAMBDA * sig2_h +       # 20% — lambda (expected goals rate) dominance
+        W_DANGER * sig3_h +       # 15% — danger attack dominance
+        W_MOMENTUM * sig4_h +     # 15% — match momentum direction
+        W_PRESSURE * sig5_h +     # 10% — pressure index dominance
+        W_XG * sig6_h +           # 10% — accumulated xG dominance
+        W_GAMETYPE * (sot_diff_s + gt_boost_h)  # 5% — SOT ratio + game type boost
     ) * tempo_mult * minute_mult * pitch_zone_factor_h
 
     score_a = (
-        W_PNEXT * sig1_a +
-        W_LAMBDA * sig2_a +
-        W_DANGER * sig3_a +
-        W_MOMENTUM * sig4_a +
-        W_PRESSURE * sig5_a +
-        W_XG * sig6_a +
-        W_GAMETYPE * (-sot_diff_s + gt_boost_a)
+        W_PNEXT * sig1_a +        # 25% — p(next goal) probability
+        W_LAMBDA * sig2_a +       # 20% — lambda (expected goals rate) dominance
+        W_DANGER * sig3_a +       # 15% — danger attack dominance
+        W_MOMENTUM * sig4_a +     # 15% — match momentum direction
+        W_PRESSURE * sig5_a +     # 10% — pressure index dominance
+        W_XG * sig6_a +           # 10% — accumulated xG dominance
+        W_GAMETYPE * (-sot_diff_s + gt_boost_a)  # 5% — SOT ratio + game type boost
     ) * tempo_mult * minute_mult * pitch_zone_factor_a
 
     # ============================================================
@@ -2528,6 +2624,51 @@ def moje_predvidevanje(r):
 # ============================================================
 
 def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
+    """
+    Main model computation function. Calculates all match metrics from a raw CSV data row.
+
+    Args:
+        data (list or str): CSV row data. Either a list of string/float values or a
+            comma-separated string. Expected columns (0-indexed):
+            0: home team name         1: away team name
+            2: odds_home              3: odds_draw        4: odds_away
+            5: minute                 6: score_home       7: score_away
+            8: xg_home                9: xg_away
+            10: shots_home            11: shots_away
+            12: sot_home              13: sot_away
+            14: attacks_home          15: attacks_away
+            16: danger_home           17: danger_away
+            18: big_chances_home      19: big_chances_away
+            20: yellow_home           21: yellow_away
+            22: red_home              23: red_away
+            24: possession_home (%)   25: possession_away (%)
+            26: blocked_home          27: blocked_away
+            28: bcm_home              29: bcm_away
+            30: corners_home          31: corners_away
+        final_third_fm_h (float, optional): Final third entries for home team
+            sourced from match memory. Used as fallback when CSV value is 0.
+        final_third_fm_a (float, optional): Final third entries for away team
+            sourced from match memory. Used as fallback when CSV value is 0.
+
+    Returns:
+        dict: Comprehensive result dictionary with all computed metrics:
+            Raw inputs: minute, score_diff, xg_h, xg_a, sot_h, sot_a, etc.
+            Lambda engine: lam_h, lam_a, lam_c, lam_total, lam_h_raw, etc.
+            Probabilities: p_goal, p_home_next, p_away_next, p_goal_raw
+            Momentum/tempo: momentum, tempo_shots, tempo_danger, tempo_att
+            Monte Carlo: mc_h_raw, mc_x_raw, mc_a_raw, mc_h_adj, mc_x_adj, mc_a_adj
+            Predictions: next_goal_prediction, next_goal_prediction_smart
+            Learning: lf_goal, lf_1x2, rh, rx, ra, n_goal, n_1x2
+            Timeline/memory: timeline (dict), wave (dict), lge (str)
+            Scores: top_scores (list of (bet_type, score) tuples)
+
+    Example:
+        csv_row = "Arsenal,Chelsea,2.10,3.30,3.80,68,1,0,0.80,0.50,6,4,3,2,22,18,8,5,2,1,1,0,0,0,58,42,1,2,0,1,5,3"
+        r = izracunaj_model(csv_row)
+        # r["p_goal"]    -> e.g. 0.72
+        # r["momentum"]  -> e.g. 0.15  (positive = home momentum)
+        # r["game_type"] -> e.g. "PRESSURE"
+    """
     # Safety initializations for variables that may be used before assignment
     counter_blocked = False
     dominant_side = None
@@ -2840,14 +2981,10 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     final_third_fm_h = final_third_fm_h or 0
     final_third_fm_a = final_third_fm_a or 0
 
+    # Use match-memory final_third values as fallback when CSV values are zero (home and away)
     if final_third_h == 0 and final_third_fm_h > 0:
         final_third_h = final_third_fm_h
 
-    if final_third_a == 0 and final_third_fm_a > 0:
-        final_third_a = final_third_fm_a
-
-    if final_third_h == 0 and final_third_fm_h > 0:
-        final_third_h = final_third_fm_h
     if final_third_a == 0 and final_third_fm_a > 0:
         final_third_a = final_third_fm_a
 
@@ -5081,6 +5218,24 @@ def print_live_lge(r):
     live_print("FAVOR", favorite_side(r))
 
 def print_live_match_memory(r):
+    """
+    Prints the MATCH MEMORY section showing timeline trends, attack wave status and LGE.
+
+    Args:
+        r (dict): Match result dictionary with keys:
+            - timeline (dict): Timeline aggregation data with fields:
+                - n (int): Number of timeline snapshots recorded
+                - trend_factor_goal (float): Goal likelihood trend multiplier
+                - trend_home (float): Home team trend factor
+                - trend_away (float): Away team trend factor
+                - true_momentum_text (str): Human-readable momentum description
+            - wave (dict): Attack wave detector output with 'active' (bool) field
+            - lge (str): Last goal event description string
+
+    Prints:
+        MATCH MEMORY section with timeline snapshot count, goal/home/away trend
+        factors, true momentum label, attack wave active flag, and LGE event.
+    """
     live_reset()
     print(f"\n{MAGENTA}--------------- MATCH MEMORY ----------------{RESET}\n")
     tg = float(r.get("timeline", {}).get("trend_factor_goal", 1.0) or 1.0)
@@ -6322,6 +6477,59 @@ LAST_MATCH_KEY = None
 
 
 def bet_decision(r):
+    """
+    Master bet decision engine for live football betting.
+
+    Evaluates all available signals and model outputs to produce a single
+    bet recommendation with confidence level, printed to stdout.
+
+    Args:
+        r (dict): Match result dictionary containing all computed metrics.
+            Required keys:
+            - minute (int/float): Current match minute (0-90+)
+            - score_diff (int): Score difference home minus away
+            - home (str): Home team name
+            - away (str): Away team name
+            - p_goal (float): Probability of a goal occurring (0.0-1.0)
+            - p_home_next (float): Probability home team scores next
+            - p_away_next (float): Probability away team scores next
+            - lam_h, lam_a (float): Expected goals rate (lambda) for home/away
+            - xg_h, xg_a (float): Expected goals accumulated for home/away
+            - sot_h, sot_a (float): Shots on target for home/away
+            - danger_h, danger_a (float): Danger attack index for home/away
+            - momentum (float): Match momentum (positive=home, negative=away)
+            - mc_h_adj, mc_x_adj, mc_a_adj (float): Monte Carlo 1X2 probabilities
+            - next_goal_prediction_smart (dict): Output from predict_next_goal_smart()
+                with 'prediction' (str) and 'confidence' (float) keys
+            - red_h, red_a (float): Red cards for home/away teams
+            - odds_home, odds_draw, odds_away (float): Market odds (0 if unavailable)
+
+    Prints:
+        Formatted BET DECISION block with:
+        - Main bet recommendation
+        - Confidence level (HIGH / MEDIUM / LOW / LOCKED / EARLY GAME)
+        - Top 5 alternative bets with scores
+        - Model diagnostics (p_goal, stronger side, MC/history values)
+
+    Decision Phases:
+        1. EARLY GAME (< 45 min)    : Always NO BET — insufficient data
+        2. EARLY PRESSURE (45-55)   : Wait for signal activation thresholds
+        3. SMART PRIORITY (55-75)   : ng_smart_conf >= 0.72 triggers direct bet
+        4. MASTER FREEZE (70+ min)  : NO BET when low lambda/tempo/goal/balanced
+        5. UNIVERSAL SCORING        : Score all 7 bet types, select highest
+
+    Example:
+        # CSV: "Arsenal,Chelsea,2.1,3.3,3.8,68,1,0,0.80,0.50,6,4,3,2,22,18,8,5,..."
+        r = izracunaj_model(csv_row)
+        bet_decision(r)
+        # Output:
+        #   =============== BET DECISION ===============
+        #   MINUTE: 68
+        #   BET: NEXT GOAL HOME
+        #   CONFIDENCE: HIGH
+        #   VALID: 68-73
+        #   ============================================
+    """
 
     global LAST_BET
     global LAST_MINUTE
@@ -7104,6 +7312,19 @@ def bet_decision(r):
 
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     top5 = ranked[:5]
+
+    # Edge case: scores dict is empty or all values are zero — fall back to NO BET
+    if not top5:
+        print()
+        print("=============== BET DECISION ===============")
+        print()
+        print("MINUTE:", minute)
+        print()
+        print("BET: NO BET")
+        print("CONFIDENCE: LOW")
+        print()
+        print("============================================")
+        return
 
     main_bet = top5[0][0]
 
