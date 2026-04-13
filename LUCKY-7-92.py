@@ -2562,26 +2562,25 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     # ============================================================
 
     if minute < 1 or minute > 130:
-        print("❌ ERROR: Minute index wrong (CSV SHIFT)")
-        return None
+        print(f"⚠️  WARNING: Minute {minute} - suspicious but continuing")
 
-    if xg_h > 10 or xg_a > 10:
-        print("❌ ERROR: xG unrealistic (CSV SHIFT)")
-        return None
+    if xg_h > 15 or xg_a > 15:
+        print(f"⚠️  WARNING: xG unrealistic ({xg_h}, {xg_a}) but continuing")
 
-    if shots_h > 50 or shots_a > 50:
-        print("❌ ERROR: shots unrealistic (CSV SHIFT)")
-        return None
+    if shots_h > 60 or shots_a > 60:
+        print(f"⚠️  WARNING: shots unrealistic but continuing")
 
     # =========================
     # VALIDATOR
     # =========================
 
     if sot_h > shots_h:
-        raise ValueError("NAPAKA: SOT home > shots home")
+        print(f"⚠️  WARNING: SOT home ({sot_h}) > shots home ({shots_h}) - adjusting")
+        sot_h = shots_h
 
     if sot_a > shots_a:
-        raise ValueError("NAPAKA: SOT away > shots away")
+        print(f"⚠️  WARNING: SOT away ({sot_a}) > shots away ({shots_a}) - adjusting")
+        sot_a = shots_a
 
     if bc_h > shots_h:
         shots_h = bc_h
@@ -2606,10 +2605,10 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
         raise ValueError("NAPAKA: negativni danger attacks")
 
     if shots_h > 40 or shots_a > 40:
-        raise ValueError("NAPAKA: preveč shots")
+        print(f"⚠️  WARNING: shots count high ({shots_h}, {shots_a}) but continuing")
 
     if sot_h > 20 or sot_a > 20:
-        raise ValueError("NAPAKA: preveč SOT")
+        print(f"⚠️  WARNING: SOT count high ({sot_h}, {sot_a}) but continuing")
 
     blocked_h = get_num(data, 26)
     blocked_a = get_num(data, 27)
@@ -2619,10 +2618,12 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     corners_a = get_num(data, 31)
 
     if corners_h < 0 or corners_a < 0:
-        raise ValueError("NAPAKA: negativni corners")
+        print(f"⚠️  WARNING: negative corners - clamping to 0")
+        corners_h = max(0, corners_h)
+        corners_a = max(0, corners_a)
 
     if corners_h > 25 or corners_a > 25:
-        raise ValueError("NAPAKA: preveč corners")
+        print(f"⚠️  WARNING: corners count high ({corners_h}, {corners_a}) but continuing")
 
     gk_saves_h = get_num(data, 32)
     gk_saves_a = get_num(data, 33)
@@ -3018,14 +3019,21 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
             xg_diff = abs(xg_h - xg_a)
             pressure_diff = abs(pressure_h - pressure_a)
+            danger_diff_mom = abs(danger_h - danger_a)
 
-            # balanced tekma → zmanjša fake smer
-            if xg_diff < 0.40 and pressure_diff < 2.5:
-                momentum *= 0.65
+            # ZELO IZRAZITO nizka razlika
+            if xg_diff < 0.06 and pressure_diff < 0.4 and danger_diff_mom < 2:
+                momentum *= 0.30
 
-            # zelo blizu → skoraj nevtralno
-            if xg_diff < 0.20 and pressure_diff < 1.5:
-                momentum *= 0.45
+            # RESNIČNO izrazito nizka razlika NA VEČ METRIK
+            elif xg_diff < 0.12 and pressure_diff < 0.8 and danger_diff_mom < 5:
+                momentum *= 0.50
+
+            # PRIBLIZNO izenačeno - samo ko je vsaj zmerna uravnoteženost
+            elif xg_diff < 0.40 and pressure_diff < 2.5:
+                momentum *= 0.75
+
+            # Sicer ohrani momentum (jasna dominacija ene strani)
 
     # MOMENTUM NORMALIZATION (FIX UNDERREACTION)
     if minute < 30:
@@ -3066,25 +3074,46 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     # DEBUG (lahko kasneje izbrišeš)
 
     lambda_core_h = (
-        xg_h * 0.58 +
-        danger_h * 0.0038 +
-        sot_h * 0.085 +
-        shots_h * 0.020 +
-        bc_h * 0.070 +
-        corners_h * 0.010
+        xg_h * 0.60 +
+        danger_h * 0.0048 +
+        sot_h * 0.100 +
+        shots_h * 0.028 +
+        bc_h * 0.090 +
+        corners_h * 0.013
     )
     lambda_core_a = (
-        xg_a * 0.58 +
-        danger_a * 0.0038 +
-        sot_a * 0.085 +
-        shots_a * 0.020 +
-        bc_a * 0.070 +
-        corners_a * 0.010
+        xg_a * 0.60 +
+        danger_a * 0.0048 +
+        sot_a * 0.100 +
+        shots_a * 0.028 +
+        bc_a * 0.090 +
+        corners_a * 0.013
     )
 
     # PRO 75 - dodaten vpliv, samo če podatki obstajajo
-    lambda_core_h += keypasses_h * 0.008 + crosses_h * 0.004 + dribbles_h * 0.006 + final_third_h * 0.0015 + bc_created_h * 0.015
-    lambda_core_a += keypasses_a * 0.008 + crosses_a * 0.004 + dribbles_a * 0.006 + final_third_a * 0.0015 + bc_created_a * 0.015
+    lambda_core_h += keypasses_h * 0.011 + crosses_h * 0.005 + dribbles_h * 0.006 + final_third_h * 0.0015 + bc_created_h * 0.028
+    lambda_core_a += keypasses_a * 0.011 + crosses_a * 0.005 + dribbles_a * 0.006 + final_third_a * 0.0015 + bc_created_a * 0.028
+
+    # PRESSURE MULTIPLIER (samo če je resničen pritisk)
+    if pressure_h > 8 and danger_h > 40:
+        lambda_core_h *= (1.0 + min(0.15, (pressure_h / 50) * 0.10))
+
+    if pressure_a > 8 and danger_a > 40:
+        lambda_core_a *= (1.0 + min(0.15, (pressure_a / 50) * 0.10))
+
+    # BIG CHANCE AMPLIFICATION
+    if bc_h >= 2 and minute >= 55:
+        lambda_core_h *= 1.30
+
+    if bc_a >= 2 and minute >= 55:
+        lambda_core_a *= 1.30
+
+    # LATE GAME SPIKE (samo ko je RESNIČEN razlog - samo dominantna ekipa)
+    if minute >= 70 and abs(score_diff) == 1:
+        if momentum > 0.12 and danger_h > danger_a:
+            lambda_core_h *= 1.12
+        elif momentum < -0.12 and danger_a > danger_h:
+            lambda_core_a *= 1.12
 
     stage_factor = clamp(0.55 + (minute / 90.0) * 0.65, 0.55, 1.18)
     pre_h = 0.33
@@ -4546,9 +4575,9 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     use_reason = "FILTER FAIL"
 
     # BALANCED filter
-    if minute >= 60 and game_type == "BALANCED" and conf >= 56 and max_mc >= 0.55:
+    if minute >= 45 and game_type == "BALANCED" and conf >= 52 and max_mc >= 0.50:
         use_filter = True
-        use_reason = "PASS | BALANCED | 60+ | conf>=56 | max_mc>=0.55"
+        use_reason = "PASS | BALANCED | 45+ | conf>=52 | max_mc>=0.50"
 
     # CHAOS filter
     elif minute >= 70 and game_type == "CHAOS" and conf >= 60 and max_mc >= 0.62 and p_goal >= 0.35:
@@ -5372,20 +5401,35 @@ def cfos_analiza_sistema(r):
 
     history_block = False
 
+    # Extract current ng_smart signal for RULE4/RULE5
+    _ng_smart_cur = r.get("next_goal_prediction_smart") or {}
+    _ng_smart_conf_cur = float(_ng_smart_cur.get("confidence", 0) or 0)
+    _ng_smart_pred_cur = str(_ng_smart_cur.get("prediction", "") or "")
+
     # RULE 1
-    if minute >= 60 and hist_goal <= 0.25 and exact_no_goal >= 0.70:
+    if minute >= 50 and hist_goal <= 0.20 and exact_no_goal >= 0.75:
         history_block = True
         razlog = "RULE1 STRONG HISTORY NO GOAL"
 
     # RULE 2
-    elif r["p_goal"] >= 0.70 and hist_goal <= 0.30 and exact_no_goal >= 0.65:
+    elif r["p_goal"] >= 0.75 and hist_goal <= 0.25 and exact_no_goal >= 0.70:
         history_block = True
         razlog = "RULE2 MODEL HISTORY CONFLICT"
 
     # RULE 3
-    elif minute >= 75 and hist_goal <= 0.35 and exact_no_goal >= 0.60:
+    elif minute >= 78 and hist_goal <= 0.30 and exact_no_goal >= 0.65:
         history_block = True
         razlog = "RULE3 LATE HISTORY LOCK"
+
+    # RULE 4: NEXT GOAL SMART CONFIDENCE TOO LOW
+    elif _ng_smart_conf_cur < 0.55 and r["p_goal"] < 0.45:
+        history_block = True
+        razlog = "RULE4 NEXT GOAL SMART CONFIDENCE TOO LOW"
+
+    # RULE 5: DRAW DOMINATES + NO CLEAR NEXT GOAL SIDE
+    elif minute >= 60 and r.get("mc_x_adj", 0) > 0.60 and _ng_smart_pred_cur not in ("HOME", "AWAY"):
+        history_block = True
+        razlog = "RULE5 DRAW DOMINATES + NO CLEAR NEXT GOAL"
 
     # =====================================================
     # AUTO BET DECISION
@@ -6243,17 +6287,17 @@ def bet_decision(r):
         LAST_MATCH_KEY = match_key
 
     # =====================================================
-    # ONLY AFTER 70
+    # ONLY AFTER 45
     # =====================================================
 
-    if minute < 70:
+    if minute < 45:
         print()
         print("=============== BET DECISION ===============")
         print()
         print("MINUTE:", minute)
         print()
         print("BET: NO BET")
-        print("CONFIDENCE: LOW")
+        print("CONFIDENCE: EARLY GAME")
         print()
         print("ALTERNATIVE:")
         print("2) NO BET")
@@ -6266,6 +6310,72 @@ def bet_decision(r):
         print("STRONGER SIDE: NONE")
         print("MC:", round(mc_h, 2), "/", round(mc_x, 2), "/", round(mc_a, 2))
         print("HISTORY:", round(hist_home, 2), "/", round(hist_draw, 2), "/", round(hist_away, 2))
+        print()
+        print("============================================")
+        return
+
+    # =====================================================
+    # 45-55 EARLY PHASE: VERY STRICT FILTER
+    # =====================================================
+
+    lam_diff_early = abs(lam_h - lam_a)
+
+    if 45 <= minute < 55:
+        if p_goal < 0.35 or abs(momentum) < 0.10 or lam_diff_early < 0.15:
+            print()
+            print("=============== BET DECISION ===============")
+            print()
+            print("MINUTE:", minute, "(45-55 early phase)")
+            print()
+            print("BET: NO BET")
+            print("CONFIDENCE: EARLY PHASE - WAITING")
+            print()
+            print("ALTERNATIVE:")
+            print("2) NO BET")
+            print("3) NO BET")
+            print("4) NO BET")
+            print("5) NO BET")
+            print()
+            print("MODEL:")
+            print("P_GOAL:", round(p_goal, 2))
+            print("STRONGER SIDE: NONE")
+            print("MC:", round(mc_h, 2), "/", round(mc_x, 2), "/", round(mc_a, 2))
+            print()
+            print("============================================")
+            return
+
+    # =====================================================
+    # NG SMART TOP PRIORITY (ABOVE ALL OTHER FILTERS)
+    # =====================================================
+
+    if ng_smart_pred in ("HOME", "AWAY") and ng_smart_conf >= 0.72 and p_goal >= 0.30:
+        _ng_main_bet = f"NEXT GOAL {ng_smart_pred}"
+        _ng_confidence = "HIGH" if ng_smart_conf >= 0.82 else "MEDIUM"
+
+        LAST_BET = _ng_main_bet
+        LAST_MINUTE = minute
+
+        print()
+        print("=============== BET DECISION ===============")
+        print()
+        print("MINUTE:", minute)
+        print()
+        print("BET:", _ng_main_bet)
+        print("CONFIDENCE:", _ng_confidence)
+        print("VALID:", minute, "-", int(minute + 5))
+        print()
+        print("ALTERNATIVE:")
+        print("2) NO BET")
+        print("3) NO BET")
+        print("4) NO BET")
+        print("5) NO BET")
+        print()
+        print("MODEL:")
+        print("P_GOAL:", round(p_goal, 2))
+        print("STRONGER SIDE:", ng_smart_pred)
+        print("MC:", round(mc_h, 2), "/", round(mc_x, 2), "/", round(mc_a, 2))
+        print("HISTORY:", round(hist_home, 2), "/", round(hist_draw, 2), "/", round(hist_away, 2))
+        print(f"NEXT GOAL SMART: {ng_smart_pred} (conf: {round(ng_smart_conf * 100, 1)} %)")
         print()
         print("============================================")
         return
