@@ -4840,10 +4840,13 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     # NEXT GOAL SAFETY GUARDS 2 & 3 (FINAL OVERRIDE AFTER SMART ALIGNMENT)
     # ============================================================
 
-    # GUARD 2: SMART_CONF_GUARD - block bet when smart confidence too low with low goal prob
-    if ng_smart_conf < 0.55 and p_goal < 0.50 and next_goal_bet != "NO BET":
+    # GUARD 2: SMART_CONF_GUARD - block bet when smart confidence is insufficient (regardless of p_goal)
+    if ng_smart_conf < 0.55 and next_goal_bet != "NO BET":
         next_goal_bet = "NO BET"
-        next_goal_reason = "SMART CONFIDENCE TOO LOW"
+        if ng_smart_conf < 0.48:
+            next_goal_reason = "SMART CONFIDENCE CRITICAL (<48%)"
+        else:
+            next_goal_reason = "SMART CONFIDENCE TOO LOW"
 
     # GUARD 3: EDGE_GUARD - block bet when borderline confidence with no clear dominance
     elif (
@@ -7160,6 +7163,13 @@ def bet_decision(r):
     elif top_score >= 5.5 and gap >= 0.5:
         confidence = "MEDIUM"
 
+    # Context-aware confidence for NEXT GOAL bets: require stronger SMART signal
+    if main_bet in ("NEXT GOAL HOME", "NEXT GOAL AWAY"):
+        if ng_smart_conf < 0.50:
+            confidence = "LOW"
+        elif ng_smart_conf < 0.65 and confidence == "HIGH":
+            confidence = "MEDIUM"
+
     if main_bet == "NO BET":
         confidence = "LOW"
 
@@ -7205,10 +7215,10 @@ def bet_decision(r):
         main_bet = "NO BET"
         confidence = "MEDIUM"
 
-    # GUARD 2: SMART_CONF_GUARD - low smart confidence with low goal probability blocks next-goal bets
-    elif ng_smart_conf < 0.55 and p_goal < 0.50 and main_bet in ("NEXT GOAL HOME", "NEXT GOAL AWAY"):
+    # GUARD 2: SMART_CONF_GUARD - block next-goal bets when SMART confidence is insufficient (regardless of p_goal)
+    elif ng_smart_conf < 0.55 and main_bet in ("NEXT GOAL HOME", "NEXT GOAL AWAY"):
         main_bet = "NO BET"
-        confidence = "MEDIUM"
+        confidence = "LOW" if ng_smart_conf < 0.48 else "MEDIUM"
 
     # GUARD 3: EDGE_GUARD - borderline confidence with no clear dominance blocks next-goal bets
     elif (
