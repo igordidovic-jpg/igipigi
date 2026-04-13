@@ -4033,20 +4033,19 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
     counter_boost_home = 1.0
     counter_boost_away = 1.0
+    MAX_COUNTER_BOOST = 1.70  # hard cap to prevent runaway lambda amplification
 
     if score_diff < 0 and minute >= 70:
         if momentum > 0.12 and lam_a < 0.40:
             # Enhanced: scale boost with xG quality of away team
             xg_quality_boost = 1.15 if (xg_a > 0 and xg_h > 0 and xg_a > xg_h) else 1.0
-            counter_boost_away = 1.55 * xg_quality_boost
-            counter_boost_away = min(counter_boost_away, 1.70)
+            counter_boost_away = min(1.55 * xg_quality_boost, MAX_COUNTER_BOOST)
 
     if score_diff > 0 and minute >= 70:
         if momentum < -0.12 and lam_h < 0.40:
             # Enhanced: scale boost with xG quality of home team
             xg_quality_boost = 1.15 if (xg_h > 0 and xg_a > 0 and xg_h > xg_a) else 1.0
-            counter_boost_home = 1.55 * xg_quality_boost
-            counter_boost_home = min(counter_boost_home, 1.70)
+            counter_boost_home = min(1.55 * xg_quality_boost, MAX_COUNTER_BOOST)
 
     lam_h *= counter_boost_home
     lam_a *= counter_boost_away
@@ -4811,11 +4810,13 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
 
     if draw_heavy_state >= 0.55 and p_goal < 0.50:
         if ng_smart_conf < 0.62:
+            # ng_smart_pred blocked; next_goal_bet will be cleared by guards below
             ng_smart_pred = "NO BET"
 
     # Quantitative DRAW pressure test: block bet when draw signal is dominant
     if draw_heavy_state >= 0.58 and p_goal < 0.55:
         if ng_smart_conf < 0.68:
+            # ng_smart_pred blocked; next_goal_bet will be cleared by guards below
             ng_smart_pred = "NO BET"
 
     if p_goal < 0.35:
