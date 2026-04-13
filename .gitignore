@@ -1,3 +1,21 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Log files
+*.log
+cfos_system.log
+
+# Environment variables
+.env
+
+# CSV data files (generated at runtime)
+cfos75_*.csv
+
+# Pytest cache
+.pytest_cache/

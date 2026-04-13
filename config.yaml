@@ -1,0 +1,60 @@
+# CFOS-XG PRO 75 TITAN - Central Configuration
+
+system:
+  name: "CFOS-XG PRO 75 TITAN"
+  version: "7-92"
+  language: "SLO"  # SLO or ENG
+
+simulation:
+  base: 40000
+  high: 90000
+  extreme: 140000
+  exact_base: 25000
+  exact_high: 60000
+
+cache:
+  ttl_seconds: 300  # 5 minutes
+  max_entries: 1000
+
+database:
+  url: "sqlite:///cfos.db"
+  match_history_table: "match_history"
+  user_prefs_table: "user_preferences"
+
+telegram:
+  token_env: "TELEGRAM_BOT_TOKEN"
+  webhook_url_env: "WEBHOOK_URL"
+  alert_levels:
+    - "HIGH"
+    - "MEDIUM"
+    - "ALL"
+  default_alert_level: "HIGH"
+  languages:
+    - "SLO"
+    - "ENG"
+
+model:
+  min_minute_for_bet: 45
+  high_confidence_threshold: 7.5
+  high_confidence_gap: 1.0
+  medium_confidence_threshold: 5.5
+  medium_confidence_gap: 0.5
+
+presets:
+  conservative:
+    min_confidence: "HIGH"
+    min_minute: 55
+    min_p_goal: 0.55
+  balanced:
+    min_confidence: "MEDIUM"
+    min_minute: 45
+    min_p_goal: 0.45
+  aggressive:
+    min_confidence: "LOW"
+    min_minute: 40
+    min_p_goal: 0.35
+
+logging:
+  level: "INFO"
+  format: "json"
+  file: "cfos_system.log"
