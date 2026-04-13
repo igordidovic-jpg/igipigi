@@ -4673,16 +4673,25 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
             p_away_next *= 1.22
             p_home_next *= 0.85
 
-    next_goal_prediction, next_goal_bet, next_goal_reason = next_goal_bet_engine(
-        p_home_next=p_home_next,
-        p_away_next=p_away_next,
-        lam_h=lam_h,
-        lam_a=lam_a,
-        momentum=momentum,
-        tempo_shots=tempo_shots,
-        tempo_danger=tempo_danger,
-        game_type=game_type,
-    )
+    # ============================================================
+    # NEXT GOAL SAFETY GUARD 1: NO_GOAL_GUARD (BEFORE ENGINE)
+    # If no-goal probability is high, block the bet without calling the engine
+    # ============================================================
+    if (1.0 - p_goal) >= 0.33:
+        next_goal_prediction = "HOME" if p_home_next > p_away_next else "AWAY"
+        next_goal_bet = "NO BET"
+        next_goal_reason = "NO GOAL RISK HIGH"
+    else:
+        next_goal_prediction, next_goal_bet, next_goal_reason = next_goal_bet_engine(
+            p_home_next=p_home_next,
+            p_away_next=p_away_next,
+            lam_h=lam_h,
+            lam_a=lam_a,
+            momentum=momentum,
+            tempo_shots=tempo_shots,
+            tempo_danger=tempo_danger,
+            game_type=game_type,
+        )
 
     next_goal_prediction_smart = predict_next_goal_smart(
         p_home_next=p_home_next,
@@ -4748,6 +4757,25 @@ def izracunaj_model(data, final_third_fm_h=None, final_third_fm_a=None):
     if next_goal_bet == "NO BET" and ng_smart_pred in ("HOME", "AWAY") and ng_smart_conf >= 0.64 and p_goal >= 0.30 and draw_heavy_state < 0.60:
         next_goal_bet = ng_smart_pred
         next_goal_reason = "SMART NEXT GOAL ALIGNMENT"
+
+    # ============================================================
+    # NEXT GOAL SAFETY GUARDS 2 & 3 (FINAL OVERRIDE AFTER SMART ALIGNMENT)
+    # ============================================================
+
+    # GUARD 2: SMART_CONF_GUARD - block bet when smart confidence too low with low goal prob
+    if ng_smart_conf < 0.55 and p_goal < 0.50 and next_goal_bet != "NO BET":
+        next_goal_bet = "NO BET"
+        next_goal_reason = "SMART CONFIDENCE TOO LOW"
+
+    # GUARD 3: EDGE_GUARD - block bet when borderline confidence with no clear dominance
+    elif (
+        0.48 <= ng_smart_conf <= 0.55
+        and 0.30 <= p_goal < 0.45
+        and abs(p_home_next - p_away_next) < 0.15
+        and next_goal_bet != "NO BET"
+    ):
+        next_goal_bet = "NO BET"
+        next_goal_reason = "MEDIUM CONFIDENCE - NO EDGE"
 
     counter_goal_raw = next_goal_bet if normalize_outcome_label(next_goal_bet) in ("HOME", "AWAY") else next_goal_prediction
     dominant_side, counter_goal = cfos_balance_counter(
@@ -7086,6 +7114,33 @@ def bet_decision(r):
         confidence = "HIGH" if r.get("mc_h", 0.0) >= 0.70 else "MEDIUM"
         stronger_side = "HOME"
         override_reason = "STRONG VALUE OVERRIDE"
+
+    # =====================================================
+    # NEXT GOAL SAFETY GUARDS (FINAL PROTECTION)
+    # Block next-goal bets when edge is insufficient
+    # =====================================================
+
+    p_no_goal = 1.0 - p_goal
+
+    # GUARD 1: NO_GOAL_GUARD - high no-goal probability blocks next-goal bets
+    if p_no_goal >= 0.33 and main_bet in ("NEXT GOAL HOME", "NEXT GOAL AWAY"):
+        main_bet = "NO BET"
+        confidence = "MEDIUM"
+
+    # GUARD 2: SMART_CONF_GUARD - low smart confidence with low goal probability blocks next-goal bets
+    elif ng_smart_conf < 0.55 and p_goal < 0.50 and main_bet in ("NEXT GOAL HOME", "NEXT GOAL AWAY"):
+        main_bet = "NO BET"
+        confidence = "MEDIUM"
+
+    # GUARD 3: EDGE_GUARD - borderline confidence with no clear dominance blocks next-goal bets
+    elif (
+        0.48 <= ng_smart_conf <= 0.55
+        and 0.30 <= p_goal < 0.45
+        and abs(p_home_next - p_away_next) < 0.15
+        and main_bet in ("NEXT GOAL HOME", "NEXT GOAL AWAY")
+    ):
+        main_bet = "NO BET"
+        confidence = "MEDIUM"
 
     # =====================================================
     # SAVE LOCK
